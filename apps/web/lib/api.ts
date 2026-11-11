@@ -16,6 +16,29 @@ function formatDetail(d: unknown): string {
   return JSON.stringify(d);
 }
 
+/* Per-visit password: the unlock token lives in sessionStorage, so it is scoped to this tab and disappears when
+   the tab is closed. Every new visit therefore asks for the password again. */
+const UNLOCK_KEY = "clipx_unlock";
+
+export function unlockToken(): string {
+  try {
+    return sessionStorage.getItem(UNLOCK_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+export function setUnlockToken(token: string | null) {
+  try {
+    if (token) sessionStorage.setItem(UNLOCK_KEY, token);
+    else sessionStorage.removeItem(UNLOCK_KEY);
+  } catch {
+    /* storage unavailable: the user will simply be asked again */
+  }
+}
+
+export const LOCK_EVENT = "clipx:locked";
+
 function csrf(): string {
   const m = document.cookie.match(/(?:^|; )clipx_csrf=([^;]+)/);
   return m ? decodeURIComponent(m[1]) : "";
@@ -28,12 +51,17 @@ export async function api<T = unknown>(path: string, init: { method?: string; bo
     headers: {
       ...(init.body !== undefined ? { "content-type": "application/json" } : {}),
       ...(method !== "GET" ? { "x-clipx-csrf": csrf() } : {}),
+      ...(unlockToken() ? { "x-clipx-unlock": unlockToken() } : {}),
     },
     body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
     credentials: "same-origin",
   });
   const text = await res.text();
   const data = text ? safeJson(text) : null;
+  if (res.status === 401 && (data as { detail?: unknown })?.detail === "locked") {
+    setUnlockToken(null);
+    window.dispatchEvent(new Event(LOCK_EVENT));
+  }
   if (!res.ok) throw new ApiError(res.status, (data as { detail?: unknown })?.detail ?? text ?? res.statusText);
   return data as T;
 }

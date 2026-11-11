@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
@@ -107,6 +107,52 @@ def remove_email(email_id: uuid.UUID, db: Session = Depends(get_db),
     row.active = False
     audit(db, user.email, "authorized_email.remove", row.email, user.ip)
     return {"status": "removed"}
+
+
+# ------------------------------------------------------------------------------------- per-visit password
+class UnlockIn(BaseModel):
+    password: str = Field(min_length=1, max_length=256)
+
+
+@router.get("/session")
+def session_status(request: Request, user: CurrentUser = Depends(get_current_user)) -> dict[str, Any]:
+    from app.security import unlock
+
+    required = unlock.password_required()
+    return {"email": user.email, "password_required": required,
+            "unlocked": (not required) or unlock.verify(request.headers.get("x-clipx-unlock"), user.email),
+            "attempts_left": unlock.attempts_left(user.email)}
+
+
+@router.post("/session/unlock")
+def session_unlock(body: UnlockIn, db: Session = Depends(get_db),
+                   user: CurrentUser = Depends(get_current_user)) -> dict[str, Any]:
+    from app.security import unlock
+    from app.security.password import verify_password
+
+    if not unlock.password_required():
+        return {"token": None, "expires_at": None}
+    if unlock.attempts_left(user.email) <= 0:
+        audit(db, user.email, "session.unlock_blocked", None, user.ip)
+        raise HTTPException(429, "Too many wrong passwords. Try again in 15 minutes.")
+    if not verify_password(body.password, get_settings().dashboard_password_hash):
+        left = unlock.record_failure(user.email)
+        audit(db, user.email, "session.unlock_failed", None, user.ip, attempts_left=left)
+        raise HTTPException(401, f"Wrong password. {left} attempt{'s' if left != 1 else ''} left.")
+    unlock.clear_failures(user.email)
+    token, exp = unlock.issue(user.email)
+    audit(db, user.email, "session.unlocked", None, user.ip)
+    return {"token": token, "expires_at": exp}
+
+
+@router.post("/session/lock")
+def session_lock(request: Request, db: Session = Depends(get_db),
+                 user: CurrentUser = Depends(get_current_user)) -> dict[str, str]:
+    from app.security import unlock
+
+    unlock.revoke(request.headers.get("x-clipx-unlock"))
+    audit(db, user.email, "session.locked", None, user.ip)
+    return {"status": "locked"}
 
 
 # ------------------------------------------------------------------------------------- overview

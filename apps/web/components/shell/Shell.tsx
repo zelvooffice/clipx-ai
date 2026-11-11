@@ -2,13 +2,14 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  BarChart3, Clapperboard, Flame, LayoutDashboard, Menu, Radio, Scissors, Send, Settings, X,
+  BarChart3, Clapperboard, Flame, LayoutDashboard, Lock, Menu, Radio, Scissors, Send, Settings, X,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { type ReactNode, useEffect, useState } from "react";
 import { cx } from "@/components/ui";
-import { useApi } from "@/lib/api";
+import { api, LOCK_EVENT, setUnlockToken, unlockToken, useApi } from "@/lib/api";
+import { LockScreen } from "./LockScreen";
 
 const NAV = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
@@ -85,14 +86,40 @@ function LivePill() {
   );
 }
 
+type Gate = "checking" | "locked" | "open";
+
 export function Shell({ children }: { children: ReactNode }) {
-  const [open, setOpen] = useState(false);
+  const [gate, setGate] = useState<Gate>("checking");
   const [email, setEmail] = useState<string | null>(null);
-  const path = usePathname();
-  useEffect(() => setOpen(false), [path]);
+
   useEffect(() => {
     fetch("/api/session").then((r) => (r.ok ? r.json() : null)).then((d) => setEmail(d?.email ?? null)).catch(() => null);
+    api<{ unlocked: boolean }>("/v1/session")
+      .then((s) => setGate(s.unlocked ? "open" : "locked"))
+      .catch(() => setGate(unlockToken() ? "open" : "locked"));
+    const onLocked = () => setGate("locked");
+    window.addEventListener(LOCK_EVENT, onLocked);
+    return () => window.removeEventListener(LOCK_EVENT, onLocked);
   }, []);
+
+  async function lock() {
+    try {
+      await api("/v1/session/lock", { method: "POST", body: {} });
+    } finally {
+      setUnlockToken(null);
+      setGate("locked");
+    }
+  }
+
+  if (gate === "checking") return <div className="min-h-screen bg-ink" aria-busy="true" />;
+  if (gate === "locked") return <LockScreen email={email} onUnlocked={() => setGate("open")} />;
+  return <App email={email} onLock={lock}>{children}</App>;
+}
+
+function App({ children, email, onLock }: { children: ReactNode; email: string | null; onLock: () => void }) {
+  const [open, setOpen] = useState(false);
+  const path = usePathname();
+  useEffect(() => setOpen(false), [path]);
 
   return (
     <div className="app-glow min-h-screen">
@@ -144,6 +171,9 @@ export function Shell({ children }: { children: ReactNode }) {
                 <span className="hidden sm:inline">{email}</span>
               </span>
             )}
+            <button onClick={onLock} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-line-strong px-2.5 text-xs text-fg-2 hover:bg-card-2 hover:text-fg" aria-label="Lock dashboard">
+              <Lock size={13} aria-hidden /> <span className="hidden sm:inline">Lock</span>
+            </button>
           </div>
         </header>
         <main id="main" tabIndex={-1} className="mx-auto max-w-[1400px] px-4 py-8 sm:px-6 lg:px-10">{children}</main>

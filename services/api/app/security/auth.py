@@ -26,6 +26,12 @@ from app.security import signing
 from app.security.ratelimit import RateLimiter
 from app.services.redis_client import get_redis
 
+# Reachable without the per-visit password: the unlock flow itself and OAuth callbacks (whose single-use
+# `state` was created by an already-unlocked session of the same user). Local-dev media is served by
+# unguessable keys that are only ever returned by unlocked endpoints (production uses R2 presigned URLs).
+UNLOCK_EXEMPT_PREFIXES = ("/v1/session", "/v1/integrations/twitch/callback", "/v1/integrations/tiktok/callback",
+                          "/v1/media/")
+
 
 @dataclass(frozen=True)
 class CurrentUser:
@@ -142,6 +148,12 @@ async def get_current_user(request: Request, db: Session = Depends(get_db)) -> C
         via = "access-jwt"
     if not is_email_authorized(db, email):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="email not authorized")
+
+    from app.security import unlock
+
+    if unlock.password_required() and not request.url.path.startswith(UNLOCK_EXEMPT_PREFIXES):
+        if not unlock.verify(request.headers.get("x-clipx-unlock"), email):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="locked")
 
     allowed, _ = RateLimiter().hit(f"user:{email}", get_settings().rate_limit_per_minute)
     if not allowed:

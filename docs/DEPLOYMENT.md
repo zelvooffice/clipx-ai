@@ -66,6 +66,7 @@ git clone <repo> && cd clipx-ai
 cp .env.example .env && $EDITOR .env          # fill every value marked REQUIRED
 python3 -c "import base64,os;print(base64.b64encode(os.urandom(32)).decode())"   # TOKEN_ENCRYPTION_KEYS
 openssl rand -hex 32                                                              # INTERNAL_API_SECRET
+docker compose -f infra/docker-compose.yml run --rm api python -m app.security.password   # DASHBOARD_PASSWORD_HASH
 cd infra && docker compose --env-file ../.env up -d --build
 docker compose logs -f migrate api monitor
 ```
@@ -86,6 +87,7 @@ when Access variables are missing and finishes by running `infra/cloudflare/veri
 - [ ] CI green on `main` (API lint/mypy/tests incl. real FFmpeg + Whisper; web tsc/vitest/next build/vinext build)
 - [ ] `.env` complete on the server; `TOKEN_ENCRYPTION_KEYS` and `INTERNAL_API_SECRET` freshly generated, stored in a password manager
 - [ ] `INTERNAL_API_SECRET` identical on the API and the Worker
+- [ ] `DASHBOARD_PASSWORD_HASH` set (asked on every visit / every new tab, for every user; 5 attempts → 15 min lockout)
 - [ ] Twitch + TikTok redirect URIs registered exactly as shown in **Settings** (trailing slash matters for TikTok)
 - [ ] `setup-access.sh` run; `AUTHORIZED_EMAILS` identical in Access, Worker vars and API env
 - [ ] R2 bucket created; R2 token scoped to the bucket only

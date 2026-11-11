@@ -82,7 +82,8 @@ Twitch/TikTok APIs and run only when credentials are provided. See [docs/TESTING
 
 ## Security model (summary)
 
-- Cloudflare Access (email one-time PIN + allowlist) in front of the dashboard.
+- Cloudflare Access (email one-time PIN + allowlist) in front of the dashboard, **plus a dashboard password asked on
+  every visit (every new tab), for every user**. The lock is enforced by the API, so it can't be bypassed in the browser.
 - The Worker **re-verifies** the Access JWT (issuer, audience, signature) and the allowlist, and **fails closed** if
   auth isn't configured.
 - Worker → API calls are HMAC-signed (timestamp, nonce, method, path, user, body hash; ±5 min; replay-protected), and

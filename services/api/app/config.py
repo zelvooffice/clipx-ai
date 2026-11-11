@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     # Bootstrap allowlist. Additional emails are managed in the authorized_emails table.
     authorized_emails: str = ""
     rate_limit_per_minute: int = 240
+    # Per-visit dashboard password (scrypt hash from `python -m app.security.password`). Required in production.
+    dashboard_password_hash: str = ""
+    unlock_ttl_minutes: int = 480
+    unlock_max_attempts: int = 5
 
     # --- Twitch ---------------------------------------------------------------
     twitch_client_id: str = ""
@@ -121,6 +125,8 @@ class Settings(BaseSettings):
             problems.append("TOKEN_ENCRYPTION_KEYS must be set")
         if not self.authorized_email_set:
             problems.append("AUTHORIZED_EMAILS must list at least one email")
+        if not self.dashboard_password_hash.startswith(("scrypt:", "scrypt$")):
+            problems.append("DASHBOARD_PASSWORD_HASH must be set (python -m app.security.password)")
         if self.storage_backend != "r2":
             problems.append("STORAGE_BACKEND must be r2 in production")
         return problems

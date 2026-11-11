@@ -33,6 +33,8 @@ async function handle(request: NextRequest, ctx: { params: Promise<{ path: strin
   if (ct) extra["content-type"] = ct;
   const range = request.headers.get("range");
   if (range) extra["range"] = range;
+  const unlock = request.headers.get("x-clipx-unlock");
+  if (unlock && unlock.length < 512) extra["x-clipx-unlock"] = unlock;
   const upstream = await backendFetch(auth.email, method, `/${joined}${request.nextUrl.search}`, body, extra);
   const headers = new Headers();
   for (const h of PASS_HEADERS) {
