@@ -1,0 +1,35 @@
+# Authorized live feed ingest. The channel adds a second output in OBS:
+#   rtmp://<server>:1935/lacy?user=publisher&pass=<INGEST_PUBLISH_PASSWORD>
+# The analyzer reads it with LIVE_INGEST_URL=rtmp://mediamtx:1935/lacy?user=analyzer&pass=<INGEST_READ_PASSWORD>
+# Passwords are injected via MTX_AUTHINTERNALUSERS_<n>_PASS environment variables (never committed).
+logLevel: info
+rtmp: yes
+rtmpAddress: :1935
+srt: yes
+srtAddress: :8890
+hls: no
+webrtc: no
+rtsp: no
+api: no
+metrics: no
+pprof: no
+playback: no
+
+authMethod: internal
+authInternalUsers:
+  - user: publisher
+    pass: change-me-via-env
+    ips: []
+    permissions:
+      - action: publish
+        path: lacy
+  - user: analyzer
+    pass: change-me-via-env
+    ips: []
+    permissions:
+      - action: read
+        path: lacy
+
+paths:
+  lacy:
+    source: publisher

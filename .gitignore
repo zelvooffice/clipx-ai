@@ -1,0 +1,28 @@
+# secrets — never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# python
+__pycache__/
+*.pyc
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+services/api/var/
+
+# node / web
+node_modules/
+.next/
+dist/
+.vinext/
+.cloudflare/
+*.tsbuildinfo
+
+# media & local data
+*.mp4
+*.wav
+celerybeat-schedule

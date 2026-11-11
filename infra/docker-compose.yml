@@ -1,0 +1,92 @@
+# CLIPX AI processing server. Start: docker compose --env-file ../.env up -d
+# Nothing is exposed publicly: the API is reached through the Cloudflare Tunnel (cloudflared).
+# MediaMTX publishes RTMP/SRT for the channel's authorized feed only (credentials required).
+name: clipx
+
+x-app: &app
+  build: ../services/api
+  image: clipx-api:latest
+  env_file: ../.env
+  environment:
+    DATABASE_URL: postgresql+psycopg://clipx:${POSTGRES_PASSWORD}@postgres:5432/clipx
+    REDIS_URL: redis://redis:6379/0
+    LIVE_INGEST_URL: ${LIVE_INGEST_URL:-}
+  volumes:
+    - models:/models
+    - work:/work
+  depends_on:
+    postgres: { condition: service_healthy }
+    redis: { condition: service_healthy }
+    migrate: { condition: service_completed_successfully }
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: clipx
+      POSTGRES_USER: clipx
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U clipx"], interval: 5s, retries: 20 }
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: [redisdata:/data]
+    healthcheck: { test: ["CMD", "redis-cli", "ping"], interval: 5s, retries: 20 }
+    restart: unless-stopped
+
+  migrate:
+    <<: *app
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
+  api:
+    <<: *app
+    expose: ["8000"]
+
+  worker:
+    <<: *app
+    command: ["celery", "-A", "app.workers.celery_app.celery", "worker", "--loglevel=INFO", "--concurrency=2",
+              "--max-tasks-per-child=50"]
+    healthcheck: { disable: true }
+
+  beat:
+    <<: *app
+    command: ["celery", "-A", "app.workers.celery_app.celery", "beat", "--loglevel=INFO",
+              "--schedule=/work/celerybeat-schedule"]
+    healthcheck: { disable: true }
+
+  monitor:
+    <<: *app
+    command: ["python", "-m", "app.workers.live_monitor"]
+    healthcheck: { disable: true }
+
+  mediamtx:
+    image: bluenviron/mediamtx:1
+    volumes: [./mediamtx.yml:/mediamtx.yml:ro]
+    environment:
+      MTX_AUTHINTERNALUSERS_0_PASS: ${INGEST_PUBLISH_PASSWORD:?set INGEST_PUBLISH_PASSWORD}
+      MTX_AUTHINTERNALUSERS_1_PASS: ${INGEST_READ_PASSWORD:?set INGEST_READ_PASSWORD}
+    ports:
+      - "1935:1935"      # RTMP (publish only, password protected)
+      - "8890:8890/udp"  # SRT
+    restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest  # pin a release tag in production
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?set CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on: [api]
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:
+  models:
+  work:
