@@ -173,7 +173,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         colors = f"\\c{_ass_color(fg)}" + (f"\\3c{_ass_color(box)}" if box else "")
         e = "9:59:59.00" if end is None else _t(end)
         ev.append(f"Dialogue: 1,{_t(start)},{e},{style},,0,0,0,,{{\\an5\\pos({W // 2},{y})\\fs{size}{colors}"
-                  f"\\fad(120,0)}}{_escape(text)}")
+                  f"\\fad(120,0)}}{text}")
     return head + "\n".join(ev) + "\n"
 
 
@@ -192,7 +192,7 @@ def _wrap(text: str, width: int = 26) -> str:
             cur = f"{cur} {w}".strip()
     if cur:
         lines.append(cur)
-    return "\\N".join(lines[:3])
+    return "\\N".join(_escape(line) for line in lines[:3])
 
 
 def _duration(p: Path) -> float:

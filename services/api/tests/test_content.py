@@ -91,3 +91,46 @@ def test_recommendations_from_measured_posts() -> None:
         assert r["status"] == "ok" and r["recommended"][0]["start_hour"] == 18
         slot, basis = scheduler.next_slot(db, PublishingSettings(), account_id=None)
         assert "Recommended block 18:00-21:00" in basis and slot.astimezone(UTC).hour == 18
+
+
+@pytest.mark.media
+@pytest.mark.parametrize("template,n", [("pov", 1), ("how_me_and_bro_look", 2), ("compilation", 3), ("reaction", 2),
+                                        ("before_after", 2)])
+def test_viral_templates_render_real_video(tmp_path, drain, template: str, n: int) -> None:  # type: ignore[no-untyped-def]
+    """Every template's FFmpeg graph runs on real rendered clips and yields a 1080x1920 H.264/AAC file."""
+    import json
+    import subprocess
+
+    from app.models import ViralEdit
+    from app.services.storage import get_storage
+    from app.video.render import RenderOptions, render
+    from tests.conftest import make_video
+
+    ids = []
+    with session_scope() as db:
+        for i in range(n):
+            src = make_video(tmp_path / f"s{i}.mp4", seconds=6)
+            res = render(src, tmp_path / f"r{i}.mp4", [{"w": "Hello", "start": 0.5, "end": 1.0, "p": 1.0}],
+                         RenderOptions(clip_id=f"v{i}", category="funny", preset="ultrafast"))
+            c = Clip(title=f"clip {i}", category="funny", quality_score=0.8, verification=Verification.verified,
+                     edit_status=EditStatus.rendered, media_source=MediaSource.live_buffer, duration_s=res.duration)
+            db.add(c)
+            db.flush()
+            c.rendered_key = f"clips/{c.id}/render_v1.mp4"
+            get_storage().put_file(c.rendered_key, res.output, "video/mp4")
+            ids.append(c.id)
+        edit = templates.create_edit(db, template, ids, "when the plan {actually} works", actor="o")
+        eid = edit.id
+    out = drain.run(kinds={"render_viral_edit"})
+    assert out == ["render_viral_edit:succeeded"], out
+    with session_scope() as db:
+        e = db.get(ViralEdit, eid)
+        assert e.status == "rendered" and e.output_clip_id
+        clip = db.get(Clip, e.output_clip_id)
+        assert clip.origin.value == "viral_edit" and clip.media_source == MediaSource.composed
+        path = get_storage().local_path(clip.rendered_key)  # type: ignore[attr-defined]
+    info = json.loads(subprocess.run(["ffprobe", "-v", "error", "-show_streams", "-of", "json", str(path)],
+                                     capture_output=True, text=True, check=True).stdout)
+    v = next(s for s in info["streams"] if s["codec_type"] == "video")
+    assert (v["codec_name"], v["width"], v["height"]) == ("h264", 1080, 1920)
+    assert any(s["codec_type"] == "audio" for s in info["streams"])

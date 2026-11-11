@@ -26,3 +26,6 @@ dist/
 *.mp4
 *.wav
 celerybeat-schedule
+
+# local redis snapshots
+*.rdb
