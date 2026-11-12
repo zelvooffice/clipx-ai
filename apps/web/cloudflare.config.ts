@@ -9,6 +9,9 @@ import { bindings, defineConfig, defineWorker, triggers } from "cf/config";
 const hasCustomDomain = Boolean(process.env.CLIPX_DOMAIN);
 // Local development runs fully offline: Workers AI has no local emulator, so it is only bound when deployed.
 const dev = process.env.CLIPX_ENV === "development";
+// CLIPX_ASSETS=r2: deploy without the static-assets upload; the Worker serves static files from R2 (static/<path>),
+// uploaded by scripts/upload-static.mjs. Default: Workers static assets.
+const assetsInR2 = process.env.CLIPX_ASSETS === "r2";
 
 export default defineConfig({
   worker: defineWorker({
@@ -20,14 +23,14 @@ export default defineConfig({
     // for this application's AUD, so the app fails closed anyway).
     workersDev: !hasCustomDomain,
     previewUrls: false,
-    assets: {
+    assets: assetsInR2 ? undefined : {
       htmlHandling: "none",
       notFoundHandling: "none",
       runWorkerFirst: ["/*", "!/_next/static/*", "!/*/_next/static/*", "!/ffmpeg/*", "!/fonts/*"],
     },
     triggers: [triggers.scheduled({ schedule: "* * * * *" })],
     env: {
-      ASSETS: bindings.assets(),
+      ...(assetsInR2 ? {} : { ASSETS: bindings.assets() }),
       DB: bindings.d1({ name: "clipx" }),
       MEDIA: bindings.r2({ name: "clipx-media" }),
       ...(dev ? {} : { AI: bindings.ai() }),

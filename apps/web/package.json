@@ -11,7 +11,8 @@
     "deploy": "vite build && cf deploy --prebuilt",
     "hash-password": "node scripts/hash-password.mjs",
     "dev:next": "next dev",
-    "build:vinext": "vite build"
+    "build:vinext": "vite build",
+    "deploy:r2": "CLIPX_ASSETS=r2 vite build && node scripts/upload-static.mjs && rm -rf .cloudflare/output/v0/workers/default/assets && cf deploy --prebuilt"
   },
   "dependencies": {
     "@ffmpeg/core": "^0.12.10",

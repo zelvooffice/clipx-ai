@@ -94,7 +94,13 @@ npx cf deploy --prebuilt --secrets-file <файл с генерирани SESSIO
 6. Докато TikTok не одобри приложението (**audit**), публикациите могат да са само „Only me“ (частни).
    Затова подай заявка за audit от портала. Когато я одобрят, включи **Publishing → TikTok app audited**.
 
-## 7. Качване на кода от GitHub (задължително)
+## 6½. Качване без GitHub Actions (както е пуснат сега)
+
+`npm run deploy:r2` (с `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` и `NODE_USE_ENV_PROXY=1` зад прокси)
+качва статичните файлове в R2 (`static/…`) и Worker-а без Workers static assets. Worker-ът сервира файловете от R2.
+Използва се, когато качването на static assets е блокирано (например зад прокси, който подменя Authorization).
+
+## 7. Качване на кода от GitHub (по желание)
 
 Сайтът се качва от GitHub Actions при всеки push в `main`, след като тестовете минат.
 GitHub → репото → **Settings → Secrets and variables → Actions → New repository secret**:

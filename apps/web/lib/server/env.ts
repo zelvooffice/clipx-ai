@@ -4,6 +4,7 @@ export interface Env {
   DB: D1Database;
   MEDIA: R2Bucket;
   AI?: Ai;
+  ASSETS?: Fetcher; // Workers static assets; absent when static files are served from R2 (static/<path>)
   // vars
   AUTHORIZED_EMAILS?: string;
   CF_ACCESS_TEAM_DOMAIN?: string;
