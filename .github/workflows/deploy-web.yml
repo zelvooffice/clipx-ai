@@ -1,9 +1,10 @@
 name: Deploy to Cloudflare
 
 # Every push to main that passes CI deploys the Worker (site + API + cron) to Cloudflare's free plan.
-# Needs repository secrets CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID, and repository variables
-# CF_ACCESS_TEAM_DOMAIN, CF_ACCESS_AUD, AUTHORIZED_EMAILS (optional: CLIPX_DOMAIN, PUBLIC_APP_URL, TWITCH_TARGET_LOGIN).
-# Worker secrets (SESSION_SECRET, TOKEN_ENCRYPTION_KEY, TWITCH_*, TIKTOK_*) live in Cloudflare and persist across deploys.
+# Needs only repository secrets CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID (optional variables: CLIPX_DOMAIN,
+# PUBLIC_APP_URL, TWITCH_TARGET_LOGIN). Worker secrets (CF_ACCESS_*, AUTHORIZED_EMAILS, SESSION_SECRET,
+# TOKEN_ENCRYPTION_KEY, TWITCH_*, TIKTOK_*) live in Cloudflare and persist across deploys; until the Access secrets
+# are set the site fails closed.
 on:
   workflow_run:
     workflows: [CI]
@@ -32,19 +33,17 @@ jobs:
       CLIPX_DOMAIN: ${{ vars.CLIPX_DOMAIN }}
       PUBLIC_APP_URL: ${{ vars.PUBLIC_APP_URL }}
       TWITCH_TARGET_LOGIN: ${{ vars.TWITCH_TARGET_LOGIN }}
-      CF_ACCESS_TEAM_DOMAIN: ${{ vars.CF_ACCESS_TEAM_DOMAIN }}
-      CF_ACCESS_AUD: ${{ vars.CF_ACCESS_AUD }}
-      AUTHORIZED_EMAILS: ${{ vars.AUTHORIZED_EMAILS }}
     steps:
       - uses: actions/checkout@v4
-      - name: Refuse to deploy without authentication configured
+      - name: Check deploy credentials
         run: |
-          for v in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID CF_ACCESS_TEAM_DOMAIN CF_ACCESS_AUD AUTHORIZED_EMAILS; do
-            if [ -z "${!v}" ]; then echo "::error::$v is not set — the site would fail closed. See docs/DEPLOYMENT.md."; exit 1; fi
+          for v in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+            if [ -z "${!v}" ]; then echo "::error::Repository secret $v is not set. See docs/DEPLOYMENT.md."; exit 1; fi
           done
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm, cache-dependency-path: apps/web/package-lock.json }
       - run: npm ci
       - run: npm run build
       - name: Deploy
-        run: npx cf deploy --prebuilt
+        # --force: secrets edited in the Cloudflare dashboard (Twitch/TikTok keys) are expected remote changes
+        run: npx cf deploy --prebuilt --force

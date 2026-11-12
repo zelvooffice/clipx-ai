@@ -58,7 +58,7 @@ npx cf deploy --prebuilt --secrets-file <файл с генерирани SESSIO
    infra/cloudflare/setup-access.sh
    ```
 
-   Скриптът извежда `CF_ACCESS_TEAM_DOMAIN` и `CF_ACCESS_AUD`. Сайтът се качва отново с тях и с `AUTHORIZED_EMAILS`.
+   Скриптът извежда `CF_ACCESS_TEAM_DOMAIN` и `CF_ACCESS_AUD`. Те и `AUTHORIZED_EMAILS` се записват като тайни на Worker-а.
 2. Проверка, че без вход нищо не се отваря:
 
    ```bash
@@ -94,16 +94,16 @@ npx cf deploy --prebuilt --secrets-file <файл с генерирани SESSIO
 6. Докато TikTok не одобри приложението (**audit**), публикациите могат да са само „Only me“ (частни).
    Затова подай заявка за audit от портала. Когато я одобрят, включи **Publishing → TikTok app audited**.
 
-## 7. Автоматично качване от GitHub (по желание)
+## 7. Качване на кода от GitHub (задължително)
 
-При всеки push в `main`, който минава тестовете, сайтът се качва сам.
-GitHub → репото → **Settings → Secrets and variables → Actions**:
+Сайтът се качва от GitHub Actions при всеки push в `main`, след като тестовете минат.
+GitHub → репото → **Settings → Secrets and variables → Actions → New repository secret**:
 
-- **Secrets:** `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`
-- **Variables:** `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD`, `AUTHORIZED_EMAILS`
-  - по желание: `TWITCH_TARGET_LOGIN` (по подразбиране `lacy`), `PUBLIC_APP_URL`, `CLIPX_DOMAIN`
+- `CLOUDFLARE_API_TOKEN`: token-ът от т. 2.
+- `CLOUDFLARE_ACCOUNT_ID`: Cloudflare → **Workers & Pages** → вдясно **Account ID** → Copy.
 
-Ако някоя стойност липсва, workflow-ът отказва да качи сайта.
+Настройките на Access и списъкът с имейли **не са в GitHub** (репото е публично). Те са тайни на Worker-а в Cloudflare.
+Ръчно пускане: **Actions → Deploy to Cloudflare → Run workflow**.
 
 ## Ограничения на безплатния план (честно)
 

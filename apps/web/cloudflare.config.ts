@@ -34,9 +34,10 @@ export default defineConfig({
       // Always "production" when deployed; local dev may set CLIPX_ENV=development (enables DEV_AUTH_EMAIL only there).
       CLIPX_ENV: bindings.text(dev ? "development" : "production"),
       ...(dev ? { DEV_AUTH_EMAIL: bindings.text(process.env.DEV_AUTH_EMAIL ?? "") } : {}),
-      CF_ACCESS_TEAM_DOMAIN: bindings.text(process.env.CF_ACCESS_TEAM_DOMAIN ?? ""),
-      CF_ACCESS_AUD: bindings.text(process.env.CF_ACCESS_AUD ?? ""),
-      AUTHORIZED_EMAILS: bindings.text(process.env.AUTHORIZED_EMAILS ?? ""),
+      // Access settings and the email allowlist are Worker secrets (set in Cloudflare, never in this public repo).
+      CF_ACCESS_TEAM_DOMAIN: bindings.secret(),
+      CF_ACCESS_AUD: bindings.secret(),
+      AUTHORIZED_EMAILS: bindings.secret(),
       TWITCH_TARGET_LOGIN: bindings.text(process.env.TWITCH_TARGET_LOGIN ?? "lacy"),
       PUBLIC_APP_URL: bindings.text(process.env.PUBLIC_APP_URL ?? ""),
       SESSION_SECRET: bindings.secret(),
