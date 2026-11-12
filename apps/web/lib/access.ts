@@ -14,22 +14,31 @@ export type AuthResult =
 let jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
 let jwksFor = "";
 
-function allowlist(): Set<string> {
+function allowlist(list?: string): Set<string> {
   return new Set(
-    env("AUTHORIZED_EMAILS")
+    (list ?? env("AUTHORIZED_EMAILS"))
       .split(",")
       .map((e) => e.trim().toLowerCase())
       .filter(Boolean),
   );
 }
 
-export async function authenticate(headers: Headers): Promise<AuthResult> {
-  const team = env("CF_ACCESS_TEAM_DOMAIN").replace(/\/$/, "");
-  const aud = env("CF_ACCESS_AUD");
-  const devEmail = env("DEV_AUTH_EMAIL");
+export interface AccessConfig {
+  team?: string;
+  aud?: string;
+  emails?: string;
+  devEmail?: string;
+  production?: boolean;
+}
+
+export async function authenticate(headers: Headers, cfg: AccessConfig = {}): Promise<AuthResult> {
+  const team = (cfg.team ?? env("CF_ACCESS_TEAM_DOMAIN")).replace(/\/$/, "");
+  const aud = cfg.aud ?? env("CF_ACCESS_AUD");
+  const devEmail = cfg.devEmail ?? env("DEV_AUTH_EMAIL");
+  const production = cfg.production ?? isProduction();
 
   if (!team || !aud) {
-    if (devEmail && !isProduction()) return { ok: true, email: devEmail.toLowerCase(), via: "dev" };
+    if (devEmail && !production) return { ok: true, email: devEmail.toLowerCase(), via: "dev" };
     return { ok: false, status: 503, reason: "Authentication is not configured (CF_ACCESS_TEAM_DOMAIN / CF_ACCESS_AUD)." };
   }
   const token = headers.get("cf-access-jwt-assertion");
@@ -42,7 +51,7 @@ export async function authenticate(headers: Headers): Promise<AuthResult> {
     const { payload } = await jwtVerify(token, jwks, { issuer: team, audience: aud });
     const email = String(payload.email ?? "").toLowerCase();
     if (!email) return { ok: false, status: 403, reason: "Service tokens cannot open the dashboard." };
-    const allowed = allowlist();
+    const allowed = allowlist(cfg.emails);
     if (allowed.size === 0) return { ok: false, status: 503, reason: "AUTHORIZED_EMAILS is not configured." };
     if (!allowed.has(email)) return { ok: false, status: 403, reason: "This email is not authorized." };
     return { ok: true, email, via: "access" };

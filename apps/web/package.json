@@ -4,17 +4,19 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
+    "dev": "CLIPX_ENV=development DEV_AUTH_EMAIL=dev@example.com vite dev --port 3001",
+    "build": "vite build",
     "lint": "tsc --noEmit",
     "test": "vitest run",
-    "dev:vinext": "vite dev --port 3001",
-    "build:vinext": "vite build",
-    "start:vinext": "vite preview",
-    "deploy:vinext": "vinext-cloudflare deploy"
+    "deploy": "vite build && cf deploy --prebuilt",
+    "hash-password": "node scripts/hash-password.mjs",
+    "dev:next": "next dev",
+    "build:vinext": "vite build"
   },
   "dependencies": {
+    "@ffmpeg/core": "^0.12.10",
+    "@ffmpeg/ffmpeg": "^0.12.15",
+    "@ffmpeg/util": "^0.12.2",
     "framer-motion": "14.12.0",
     "jose": "6.2.17",
     "lucide-react": "1.72.0",
@@ -25,6 +27,7 @@
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^2.0.0-beta.v.15",
+    "@cloudflare/workers-types": "^5.20261112.1",
     "@tailwindcss/postcss": "4.3.5",
     "@types/node": "^22",
     "@types/react": "19.3.0",

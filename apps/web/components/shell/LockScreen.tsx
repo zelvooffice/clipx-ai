@@ -5,18 +5,22 @@ import { Loader2, LockKeyhole } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { api, ApiError, setUnlockToken } from "@/lib/api";
 
-/** Shown on every new visit (every new tab), for every user, until the dashboard password is entered. */
-export function LockScreen({ email, onUnlocked }: { email: string | null; onUnlocked: () => void }) {
+/** Shown on every new visit (every new tab), for every user, until the dashboard password is entered.
+ *  On the very first visit (no password exists yet) the authorized owner creates it here. */
+export function LockScreen({ email, onUnlocked, setup = false, minLength = 12 }: { email: string | null; onUnlocked: () => void; setup?: boolean; minLength?: number }) {
   const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
-    setBusy(true);
     setError(null);
+    if (setup && password.length < minLength) return setError(`Use at least ${minLength} characters.`);
+    if (setup && password !== confirm) return setError("The two passwords don't match.");
+    setBusy(true);
     try {
-      const r = await api<{ token: string | null }>("/v1/session/unlock", { method: "POST", body: { password } });
+      const r = await api<{ token: string | null }>(setup ? "/v1/session/setup" : "/v1/session/unlock", { method: "POST", body: { password } });
       setUnlockToken(r.token);
       setPassword("");
       onUnlocked();
@@ -39,15 +43,18 @@ export function LockScreen({ email, onUnlocked }: { email: string | null; onUnlo
         <span className="accent-gradient grid size-11 place-items-center rounded-xl text-white">
           <LockKeyhole size={20} aria-hidden />
         </span>
-        <h1 id="lock-title" className="mt-5 text-lg font-semibold">CLIPX AI is locked</h1>
+        <h1 id="lock-title" className="mt-5 text-lg font-semibold">{setup ? "Create the dashboard password" : "CLIPX AI is locked"}</h1>
         <p className="mt-1 text-sm text-muted">
-          Enter the dashboard password to continue{email ? <> as <span className="text-fg-2">{email}</span></> : null}.
+          {setup
+            ? <>First visit: choose the password everyone will need on every visit (at least {minLength} characters). Only its hash is stored.</>
+            : <>Enter the dashboard password to continue{email ? <> as <span className="text-fg-2">{email}</span></> : null}.</>}
         </p>
         <label className="mt-6 block">
           <span className="mb-1.5 block text-xs font-medium text-fg-2">Password</span>
           <input
             type="password"
-            autoComplete="current-password"
+            autoComplete={setup ? "new-password" : "current-password"}
+            minLength={setup ? minLength : undefined}
             autoFocus
             required
             value={password}
@@ -55,13 +62,20 @@ export function LockScreen({ email, onUnlocked }: { email: string | null; onUnlo
             className="h-10 w-full rounded-lg border border-line-strong bg-[#0b0b0d] px-3 text-sm text-fg focus:border-[#7c3aed]/70 focus:outline-none"
           />
         </label>
+        {setup && (
+          <label className="mt-4 block">
+            <span className="mb-1.5 block text-xs font-medium text-fg-2">Repeat password</span>
+            <input type="password" autoComplete="new-password" required value={confirm} onChange={(e) => setConfirm(e.target.value)}
+              className="h-10 w-full rounded-lg border border-line-strong bg-[#0b0b0d] px-3 text-sm text-fg focus:border-[#7c3aed]/70 focus:outline-none" />
+          </label>
+        )}
         {error && <p role="alert" className="mt-3 text-sm text-[#f08a8a]">{error}</p>}
         <button
           type="submit"
           disabled={busy || !password}
           className="accent-gradient mt-5 inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg text-sm font-medium text-white disabled:opacity-50"
         >
-          {busy && <Loader2 size={15} className="animate-spin" aria-hidden />} Unlock
+          {busy && <Loader2 size={15} className="animate-spin" aria-hidden />} {setup ? "Create password" : "Unlock"}
         </button>
         <p className="mt-4 text-xs text-muted">
           You will be asked again in every new tab and whenever you lock the dashboard.

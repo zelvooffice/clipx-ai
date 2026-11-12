@@ -1,62 +1,60 @@
-export type Session = {
-  id: string; twitch_stream_id: string; title: string | null; game: string | null; status: string;
-  started_at: string | null; ended_at: string | null; analysis_mode: string; detected_via: string;
-  stats: Record<string, number | null>; signals: string[];
+/** Shapes returned by the Worker API (/api/v1). Timestamps are Unix seconds. */
+export type Stream = {
+  id: string; title: string | null; game: string | null; status: "live" | "ended"; started_at: number; ended_at: number | null;
+  detected_via: string | null; clips_synced_at: number | null;
+  stats: { viewer_clips?: number; selected?: number; duplicates?: number; below_threshold?: number };
 };
 
 export type Capabilities = {
-  app_configured: boolean; accounts_connected: number; can_detect_live: boolean; can_create_clips: boolean;
-  can_read_chat: boolean; can_download_clips: boolean; can_vod_clip: boolean; live_ingest_configured: boolean;
-  notes: string[];
+  app_configured: boolean; accounts_connected: number; can_detect_live: boolean; can_list_clips: boolean;
+  can_download_clips: boolean; media_account: string | null; notes: string[]; how: string;
 };
 
-export type Candidate = {
-  id: string; peak_offset_s: number; start_offset_s: number; end_offset_s: number; category: string;
-  title: string | null; explanation: string; context_summary: string | null; quality_score: number; confidence: number;
-  components: Record<string, number | null>; signals: Record<string, number | boolean>; supporting_families: string[];
-  signals_used: string[]; analyzer: string; status: string; reject_reason: string | null; latency_ms: number | null;
-  transcript_excerpt: string | null; detected_at: string | null;
-};
+export type ClipStatus = "discovered" | "duplicate" | "needs_media" | "media_ready" | "processing" | "rendered" | "failed" | "rejected";
 
 export type Clip = {
-  id: string; origin: "stream_clip" | "viral_edit"; session_id: string | null; title: string; category: string;
-  quality_score: number | null; confidence: number | null; verification: "verified" | "unverified";
-  duration_s: number | null; edit_status: string; edit_error: string | null; twitch_status: string;
-  twitch_clip_url: string | null; twitch_error: string | null; media_source: string; caption: string | null;
-  hashtags: string[]; caption_source: string | null; created_at: string | null; thumbnail_url: string | null;
-  video_url: string | null; layout: string | null;
+  id: string; origin: "twitch_clip" | "viral_edit"; stream_id: string | null; title: string; clipper: string | null;
+  view_count: number | null; score: number | null; selected: boolean; status: ClipStatus; status_detail: string | null;
+  duration_s: number | null; twitch_url: string | null; category: string; caption: string | null; hashtags: string[];
+  caption_source: string | null; created_at: number | null; updated_at: number | null; video_url: string | null;
+  thumbnail_url: string | null; source_url: string | null; render_version: number; offset_s?: number;
 };
 
-export type Cue = { start: number; end: number; zone: string; words: { w: string; start: number; end: number; emph: boolean }[] };
+export type Word = { w: string; start: number; end: number; emph?: boolean };
+export type Cue = { start: number; end: number; zone: "lower" | "middle" | "upper"; words: Word[] };
+
+export type ClipEdit = {
+  layout?: "fit" | "crop"; crop_x?: number | null; zoom_intensity?: number; trim_start?: number; trim_end?: number | null;
+  sub_size?: number; sub_color?: string; sub_highlight?: string; sub_uppercase?: boolean;
+};
 
 export type ClipDetail = Clip & {
-  rights_basis: string | null; source_url: string | null; transcript: string | null; twitch_edit_url: string | null; start_offset_s: number | null;
-  candidate: Candidate | null;
-  edit_config: null | {
-    layout: string; zoom_intensity: number; sfx_enabled: boolean; crop_override: { x_center: number } | null;
-    trim_start_s: number; trim_end_s: number | null; version: number;
-    subtitle_style: { size: number; primary: string; highlight: string; outline: number; uppercase: boolean; emphasis: boolean };
-    plan: null | { style: string; intensity: number; zooms: unknown[]; sfx: unknown[]; notes: string[] };
-  };
-  subtitles: null | { id: string; engine: string; language: string | null; edited: boolean; version: number; cues: Cue[]; word_count: number };
-  publishing: { id: string; status: string; mode: string; scheduled_for: string | null; fail_reason: string | null }[];
-  processing: { kind: string; status: string; attempts: number; error: string | null; updated_at: string | null }[];
+  words: Word[]; cues: Cue[]; cues_edited: boolean; edit: ClipEdit; transcript: string | null; rights_basis: string | null;
+  vod_offset: number | null;
+  publishing: { id: string; status: string; mode: string; scheduled_for: number | null; fail_reason: string | null }[];
 };
 
 export type PublishingJob = {
-  id: string; clip: Clip; mode: string; status: string; title: string; privacy_level: string | null;
-  scheduled_for: string | null; schedule_basis: string | null; transfer_method: string | null; publish_id: string | null;
-  post_ids: string[]; fail_reason: string | null; confirmed_by: string | null; published_at: string | null; created_at: string | null;
+  id: string; clip_id: string; clip_title: string; mode: "direct_post" | "inbox_draft"; status: string; title: string;
+  privacy_level: string | null; scheduled_for: number | null; schedule_basis: string | null; publish_id: string | null;
+  post_ids: string[]; fail_reason: string | null; confirmed_by: string | null; published_at: number | null;
+  created_at: number; updated_at: number; thumbnail_url: string | null; video_url: string | null; clip_duration: number | null;
 };
 
 export type TikTokAccount = {
-  id: string; display_name: string | null; username: string | null; avatar_url: string | null;
-  creator_info: Record<string, unknown> | null; creator_info_at: string | null; scopes: string[]; revoked: boolean;
-  token_expires_at: string | null; connected_by: string | null;
+  open_id: string; display_name: string | null; username: string | null; avatar_url: string | null;
+  creator_info: Record<string, unknown> | null; creator_info_at: number | null; scopes: string[]; revoked: boolean;
+  connected_by: string | null;
 };
 
 export type PublishingSettings = {
   auto_publish: boolean; auto_mode: "inbox_draft" | "direct_post"; client_audited: boolean; max_posts_per_day: number;
-  cooldown_minutes: number; min_quality_to_publish: number; timezone: string; require_verified_clips: boolean;
-  automation_consent_by: string | null; automation_consent_at: string | null;
+  cooldown_minutes: number; timezone: string; automation_consent_by: string | null; automation_consent_at: number | null;
 };
+
+export type ProcessingSettings = {
+  target_clips_max: number; min_views: number; min_clip_s: number; max_clip_s: number; default_layout: "fit" | "crop";
+  zoom_intensity: number; auto_process: boolean;
+};
+
+export type Activity = { at: number; level: string; component: string; event: string; message: string };

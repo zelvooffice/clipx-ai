@@ -1,24 +1,36 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { ExternalLink, Flame, Lock, RefreshCw, Sparkles, TrendingUp, Wand2, X } from "lucide-react";
+import { ExternalLink, Flame, Loader2, Lock, RefreshCw, Send, Sparkles, TrendingUp, Wand2, X } from "lucide-react";
 import { useState } from "react";
-import { ClipCard } from "@/components/ClipCard";
+import { QueueDialog } from "@/components/QueueDialog";
 import { Badge, Button, Card, CardHeader, Empty, ErrorState, Field, Notice, PageHeader, Skeleton, inputClass } from "@/components/ui";
 import { api, ApiError, mediaUrl, useApi } from "@/lib/api";
 import { ago, label, num } from "@/lib/format";
 import type { Clip } from "@/lib/types";
 
 type Source = {
-  id: string; platform: string; url: string; title: string | null; creator: string | null; published_at: string | null;
-  view_count: number | null; engagement: Record<string, number> | null; popularity_score: number; rights_status: string;
-  discovered_via: string; duration_s: number | null;
+  id: string; platform: string; url: string; title: string | null; creator: string | null; published_at: number | null;
+  view_count: number | null; popularity: number; rights: string; duration: number | null;
 };
 type Suggestion = {
-  template: string; name: string; description: string; score: number; evidence: string[];
-  suggested_clip_ids: string[]; ready: boolean; text_hint: string;
+  template: string; name: string; description: string; min: number; max: number; evidence: string[];
+  suggested_clip_ids: string[]; ready: boolean;
 };
-type Edit = { id: string; template: string; params: { text?: string }; status: string; error: string | null; created_at: string; output: Clip | null };
+type Edit = {
+  id: string; template: string; text: string | null; input_clip_ids: string[]; status: string; created_at: number;
+  output_clip_id: string | null; out_title: string | null; video_url: string | null; thumbnail_url: string | null;
+};
+const TEXT_HINT: Record<string, string> = { pov: "you're in Lacy's chat when this happens", compilation: "Lacy's best moments this week", how_me_and_bro_look: "how me and bro look" };
+
+/** Renders a queued edit in this tab from the input clips' rendered videos. */
+async function renderEdit(e: Edit, onStage: (s: string) => void) {
+  const clips = await Promise.all(e.input_clip_ids.map((id) => api<Clip>(`/v1/clips/${id}`)));
+  const { renderViral } = await import("@/lib/render/engine");
+  await renderViral({ editId: e.id, template: e.template, text: e.text ?? "",
+    clips: clips.map((c) => ({ id: c.id, video_url: mediaUrl(c.video_url)!, duration_s: c.duration_s })) },
+  (p) => onStage(`${p.stage}${p.ratio !== undefined && p.stage === "rendering" ? ` ${Math.round(p.ratio * 100)}%` : ""}`));
+}
 
 export default function ViralPage() {
   const sources = useApi<Source[]>("/v1/viral/sources");
@@ -31,7 +43,7 @@ export default function ViralPage() {
     setDiscovering(true);
     try {
       await api("/v1/viral/discover", { method: "POST", body: {} });
-      setTimeout(() => { sources.reload(); sugg.reload(); }, 4000);
+      await Promise.all([sources.reload(), sugg.reload()]);
     } finally {
       setDiscovering(false);
     }
@@ -44,20 +56,21 @@ export default function ViralPage() {
         actions={<Button icon={RefreshCw} loading={discovering} onClick={discover}>Discover popular content</Button>} />
 
       <Notice tone="info" title="How sources are used">
-        Popular videos are read for <strong>metadata only</strong> (title, views, date, creator) from official APIs. New edits are
-        composed exclusively from CLIPX&apos;s own clips with authorized media — never from downloaded third-party videos.
+        Popular Lacy clips are read for <strong>metadata only</strong> (title, views, date, creator) from Twitch&apos;s official API.
+        New edits are composed in your browser exclusively from CLIPX&apos;s own rendered clips with authorized media — never from
+        downloaded third-party videos.
       </Notice>
 
       {/* 1 — popular existing content */}
       <Card className="mt-6">
-        <CardHeader title="Popular Lacy videos" hint="Existing content ranked by views per day · statistics exactly as reported by the source" />
+        <CardHeader title="Popular Lacy clips (last 30 days)" hint="Ranked by views, adjusted for age · view counts exactly as reported by Twitch" />
         {sources.error && <div className="p-5"><ErrorState error={sources.error} onRetry={sources.reload} /></div>}
         {sources.loading ? <div className="p-5"><Skeleton className="h-40 w-full" /></div> : sources.data?.length ? (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[720px] text-left text-sm">
               <thead className="text-xs text-muted">
                 <tr className="border-b border-line">
-                  {["Title", "Platform", "Creator", "Published", "Views", "Popularity", "Media rights", ""].map((h) => (
+                  {["Title", "Platform", "Clipped by", "Published", "Views", "Popularity", "Media rights", ""].map((h) => (
                     <th key={h} className="px-5 py-2.5 font-medium">{h}</th>
                   ))}
                 </tr>
@@ -70,9 +83,9 @@ export default function ViralPage() {
                     <td className="px-5 py-3 text-fg-2">{s.creator ?? "—"}</td>
                     <td className="px-5 py-3 text-muted">{ago(s.published_at)}</td>
                     <td className="px-5 py-3 tabular-nums">{s.view_count === null ? <span className="text-muted">not provided</span> : num(s.view_count)}</td>
-                    <td className="px-5 py-3 tabular-nums text-fg-2">{s.popularity_score.toFixed(2)}</td>
+                    <td className="px-5 py-3 tabular-nums text-fg-2">{s.popularity.toFixed(2)}</td>
                     <td className="px-5 py-3">
-                      {s.rights_status === "authorized"
+                      {s.rights === "authorized"
                         ? <Badge tone="good">Authorized</Badge>
                         : <Badge tone="neutral" icon={Lock}>Metadata only</Badge>}
                     </td>
@@ -89,7 +102,7 @@ export default function ViralPage() {
         ) : (
           <Empty icon={TrendingUp} title="No popular content discovered yet"
             action={<Button onClick={discover} loading={discovering}>Run discovery</Button>}>
-            Discovery uses Twitch&apos;s official Get Clips API (and YouTube&apos;s Data API if a key is configured).
+            Discovery uses Twitch&apos;s official Get Clips API and runs automatically every 6 hours.
           </Empty>
         )}
       </Card>
@@ -120,14 +133,7 @@ export default function ViralPage() {
       <h2 className="mb-3 mt-10 flex items-center gap-2 text-sm font-medium text-fg-2"><Wand2 size={15} aria-hidden /> Generated edits</h2>
       {edits.data?.length ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
-          {edits.data.map((e) => e.output ? <ClipCard key={e.id} clip={e.output} /> : (
-            <Card key={e.id} className="p-5">
-              <p className="font-medium">{label(e.template)}</p>
-              <p className="mt-1 text-sm text-muted">{e.params.text || "—"}</p>
-              <div className="mt-3">{e.status === "failed" ? <Badge tone="critical">Failed</Badge> : <Badge tone="info">{label(e.status)}</Badge>}</div>
-              {e.error && <p className="mt-2 line-clamp-3 text-xs text-[#f08a8a]">{e.error}</p>}
-            </Card>
-          ))}
+          {edits.data.map((e) => <EditCard key={e.id} e={e} onChange={edits.reload} />)}
         </div>
       ) : <Card><Empty icon={Wand2} title="No viral edits yet">Pick a ready format above to create one.</Empty></Card>}
 
@@ -136,11 +142,61 @@ export default function ViralPage() {
   );
 }
 
+function EditCard({ e, onChange }: { e: Edit; onChange: () => void }) {
+  const [stage, setStage] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [queue, setQueue] = useState(false);
+  async function render() {
+    setErr(null);
+    setStage("starting");
+    try {
+      await renderEdit(e, setStage);
+      onChange();
+    } catch (x) {
+      setErr(x instanceof Error ? x.message : String(x));
+    } finally {
+      setStage(null);
+    }
+  }
+  return (
+    <Card className="overflow-hidden">
+      <div className="relative aspect-[9/16] max-h-[340px] w-full bg-[#09090b]">
+        {e.video_url ? (
+          <video src={mediaUrl(e.video_url)} poster={mediaUrl(e.thumbnail_url)} controls playsInline preload="none"
+            className="size-full object-cover" aria-label={`${label(e.template)} edit`} />
+        ) : (
+          <div className="grid size-full place-items-center p-4 text-center text-sm text-muted">
+            {stage ? <span className="flex items-center gap-2" role="status"><Loader2 size={15} className="animate-spin" aria-hidden /> {stage}</span> : "Not rendered yet"}
+          </div>
+        )}
+      </div>
+      <div className="space-y-2 p-4">
+        <div className="flex items-center gap-2">
+          <Badge tone="accent" noIcon>{label(e.template)}</Badge>
+          {e.status === "rendered" ? <Badge tone="good">Ready</Badge> : <Badge tone="info">{label(e.status)}</Badge>}
+        </div>
+        <p className="line-clamp-2 text-sm text-fg-2">{e.text || "—"}</p>
+        <p className="text-[11px] text-muted">{e.input_clip_ids.length} source clip{e.input_clip_ids.length === 1 ? "" : "s"} · {ago(e.created_at)}</p>
+        {err && <p className="text-xs text-[#fca5a5]" role="alert">{err}</p>}
+        <div className="flex gap-2 pt-1">
+          {e.status !== "rendered" && <Button variant="primary" icon={Wand2} loading={Boolean(stage)} onClick={render}>Render in this tab</Button>}
+          {e.output_clip_id && <Button icon={Send} onClick={() => setQueue(true)}>Queue</Button>}
+        </div>
+      </div>
+      {queue && e.output_clip_id && (
+        <QueueDialog clip={{ id: e.output_clip_id, title: e.out_title ?? label(e.template) } as Clip}
+          onClose={() => setQueue(false)} onDone={() => setQueue(false)} />
+      )}
+    </Card>
+  );
+}
+
 function CreateEdit({ s, onClose, onDone }: { s: Suggestion; onClose: () => void; onDone: () => void }) {
-  const clips = useApi<{ items: Clip[] }>("/v1/clips?status=rendered&verification=verified&origin=stream_clip&limit=60&sort=quality");
-  const max = s.template === "compilation" ? 5 : ["pov", "storytime"].includes(s.template) ? 1 : 2;
+  const clips = useApi<{ items: Clip[] }>("/v1/clips?status=rendered&origin=twitch_clip&limit=60&sort=views");
+  const max = s.max;
   const [picked, setPicked] = useState<string[]>(s.suggested_clip_ids.slice(0, max));
-  const [text, setText] = useState(s.text_hint);
+  const [text, setText] = useState(TEXT_HINT[s.template] ?? "");
+  const [stage, setStage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -151,12 +207,14 @@ function CreateEdit({ s, onClose, onDone }: { s: Suggestion; onClose: () => void
     setBusy(true);
     setErr(null);
     try {
-      await api("/v1/viral/edits", { method: "POST", body: { template: s.template, clip_ids: picked, text } });
+      const { id } = await api<{ id: string }>("/v1/viral/edits", { method: "POST", body: { template: s.template, clip_ids: picked, text } });
+      await renderEdit({ id, template: s.template, text, input_clip_ids: picked } as Edit, setStage);
       onDone();
     } catch (e) {
       setErr(e instanceof ApiError ? e.message : String(e));
     } finally {
       setBusy(false);
+      setStage(null);
     }
   }
   return (
@@ -183,13 +241,14 @@ function CreateEdit({ s, onClose, onDone }: { s: Suggestion; onClose: () => void
                 </button>
               ))}
             </div>
-            {clips.data && !clips.data.items.length && <p className="text-sm text-muted">No verified, rendered clips with authorized media yet.</p>}
+            {clips.data && !clips.data.items.length && <p className="text-sm text-muted">No rendered clips with authorized media yet.</p>}
           </div>
+          {stage && <Notice tone="info" title={`Rendering in this tab: ${stage}`}>Keep this tab open until it finishes.</Notice>}
           {err && <Notice tone="critical" title="Couldn’t create the edit">{err}</Notice>}
         </div>
         <div className="flex justify-end gap-2 border-t border-line px-6 py-4">
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button variant="primary" icon={Wand2} loading={busy} disabled={!picked.length} onClick={submit}>Render edit</Button>
+          <Button variant="primary" icon={Wand2} loading={busy} disabled={picked.length < s.min} onClick={submit}>Render edit</Button>
         </div>
       </motion.div>
     </div>

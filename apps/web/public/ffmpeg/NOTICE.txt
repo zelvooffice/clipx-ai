@@ -1,0 +1,5 @@
+ffmpeg-core.js / ffmpeg-core.wasm.gz — @ffmpeg/core 0.12.10 (ffmpeg.wasm, https://github.com/ffmpegwasm/ffmpeg.wasm)
+FFmpeg compiled to WebAssembly, including libx264 and libass. Licensed under the GNU GPL v2 or later.
+Corresponding source: https://github.com/ffmpegwasm/ffmpeg.wasm/tree/v0.12.10 and https://ffmpeg.org/download.html
+The .wasm file is the unmodified upstream binary, gzip-compressed (Cloudflare static assets are limited to 25 MiB per file);
+the browser decompresses it before use.

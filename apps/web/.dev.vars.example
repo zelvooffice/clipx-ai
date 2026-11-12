@@ -1,0 +1,10 @@
+# Local development secrets for the Worker (copy to .dev.vars — never commit .dev.vars).
+# Generate: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+SESSION_SECRET=
+# Generate: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+TOKEN_ENCRYPTION_KEY=
+# Optional locally (leave empty to test without them)
+TWITCH_CLIENT_ID=
+TWITCH_CLIENT_SECRET=
+TIKTOK_CLIENT_KEY=
+TIKTOK_CLIENT_SECRET=

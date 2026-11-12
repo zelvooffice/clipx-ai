@@ -11,11 +11,11 @@ type Summary = {
   videos: number; totals: { views: number; likes: number; comments: number; shares: number }; engagement_rate: number | null;
   retention: { available: boolean; note: string };
   daily: { date: string; views: number; likes: number; shares: number; comments: number; posts: number }[];
-  best: { tiktok_video_id: string; title: string | null; views: number | null; likes: number | null; comments: number | null;
-          shares: number | null; share_url: string | null; posted_at: string | null }[];
-  last_synced: string | null;
+  best: { video_id: string; title: string | null; views: number | null; likes: number | null; comments: number | null;
+          shares: number | null; share_url: string | null; posted_at: number | null }[];
+  last_synced: number | null;
   posting_times: { status: string; sample_size: number; min_required: number; note: string; timezone: string; method: string;
-                   windows: { start_hour: number; end_hour: number; posts: number; median_views: number; engagement_rate: number; score: number; eligible: boolean }[];
+                   windows: { start_hour: number; end_hour: number; posts: number; median_views: number; score: number; eligible: boolean }[];
                    recommended?: { start_hour: number }[] };
 };
 
@@ -28,7 +28,7 @@ export default function AnalyticsPage() {
     setSyncing(true);
     try {
       await api("/v1/analytics/sync", { method: "POST", body: {} });
-      setTimeout(reload, 5000);
+      await reload();
     } finally {
       setSyncing(false);
     }
@@ -89,10 +89,10 @@ export default function AnalyticsPage() {
                   </thead>
                   <tbody>
                     {data.best.map((b, i) => (
-                      <tr key={b.tiktok_video_id} className="border-b border-line last:border-0">
+                      <tr key={b.video_id} className="border-b border-line last:border-0">
                         <td className="px-5 py-3 tabular-nums text-muted">{i + 1}</td>
                         <td className="max-w-[18rem] truncate px-5 py-3">
-                          {b.share_url ? <a className="hover:underline" href={b.share_url} target="_blank" rel="noreferrer">{b.title || b.tiktok_video_id}</a> : b.title}
+                          {b.share_url ? <a className="hover:underline" href={b.share_url} target="_blank" rel="noreferrer">{b.title || b.video_id}</a> : b.title}
                         </td>
                         <td className="px-5 py-3 text-muted">{dateTime(b.posted_at)}</td>
                         {[b.views, b.likes, b.shares, b.comments].map((v, j) => <td key={j} className="px-5 py-3 tabular-nums">{num(v)}</td>)}

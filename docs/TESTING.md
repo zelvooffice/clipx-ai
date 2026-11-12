@@ -1,5 +1,17 @@
 # CLIPX AI — Test Strategy & Plan
 
+## Free-plan Worker (apps/web) — what runs in CI
+| Suite | What it proves |
+|---|---|
+| `tests/api.test.ts` | per-visit password (setup once, unlock, lockout after 5, change signs out other sessions), CSRF + Origin, browser processing protocol (claim exclusivity, render upload, unique caption with `#Lacy`, Range media), cue/edit validation, TikTok consent rules, analytics never invents numbers |
+| `tests/cron.test.ts` | live/offline detection once, viewer-clip ranking (views, duplicates by overlap, threshold, per-stream max, never padded, locked clips untouched), Get Clips Download only as verified editor/broadcaster (403 → stop), streaming into R2 |
+| `tests/access.test.ts` | Cloudflare Access JWT gate fails closed |
+
+D1 runs on `node:sqlite` (same SQLite dialect) and R2 is an in-memory double (`tests/helpers/cf.ts`); Twitch responses
+are labelled fixtures. The render filter graphs were validated with native FFmpeg (fit, crop, POV, compilation,
+stack) and the full pipeline end-to-end in Chromium against the local Worker (`npm run dev`): unlock → background
+tab claims the clip → ffmpeg.wasm render (12 s clip in 49 s) → upload → caption; POV viral edit rendered in 15 s.
+
 ## Principles
 - **Real infrastructure where it is local**: tests run against real PostgreSQL (schema created by the Alembic
   migration, so migrations are tested too), real Redis, real FFmpeg/OpenCV, and real faster-whisper.

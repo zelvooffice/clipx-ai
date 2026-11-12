@@ -4,4 +4,5 @@ export function env(name: string): string {
   return v ?? "";
 }
 
-export const isProduction = () => env("NODE_ENV") === "production" || env("CLIPX_ENV") === "production";
+/** Fail closed: only an explicit CLIPX_ENV=development enables the local dev bypass. */
+export const isProduction = () => env("CLIPX_ENV") !== "development";

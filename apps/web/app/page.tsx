@@ -6,14 +6,14 @@ import { GroupedBars } from "@/components/charts";
 import { Badge, Button, Card, CardHeader, Empty, ErrorState, Notice, PageHeader, Skeleton, Stat, linkButton } from "@/components/ui";
 import { useApi } from "@/lib/api";
 import { ago, dateTime, label } from "@/lib/format";
-import type { Capabilities, Session } from "@/lib/types";
+import { useProcessor } from "@/components/Processor";
+import type { Activity as Act, Capabilities, Stream } from "@/lib/types";
 
 type Overview = {
-  live: Session | null; last_session: Session | null;
-  counts: { clips: number; rendered: number; published: number; awaiting_confirmation: number; active_jobs: number; dead_jobs_7d: number };
+  live: Stream | null; last_session: Stream | null;
+  counts: { clips: number; rendered: number; to_process: number; published: number; awaiting_confirmation: number };
   clips_per_day: { date: string; clips: number }[]; published_per_day: { date: string; published: number }[];
-  activity: { at: string; level: string; component: string; event: string; message: string }[];
-  capabilities: Capabilities;
+  activity: Act[]; capabilities: Capabilities;
 };
 
 function last14(o: Overview) {
@@ -31,9 +31,8 @@ function last14(o: Overview) {
 export default function OverviewPage() {
   const { data, error, loading, reload } = useApi<Overview>("/v1/overview", { refreshMs: 20000 });
   const s = data?.live ?? data?.last_session ?? null;
-  const processing = data
-    ? data.counts.active_jobs > 0 ? `${data.counts.active_jobs} jobs running` : "Idle"
-    : "";
+  const proc = useProcessor();
+  const processing = proc.current ? `Editing 1 clip` : data ? (data.counts.to_process ? `${data.counts.to_process} to edit` : "Idle") : "";
 
   return (
     <>
@@ -53,24 +52,24 @@ export default function OverviewPage() {
               </p>
               <p className="mt-1.5 text-xs text-muted">
                 {data?.live
-                  ? `Live since ${dateTime(data.live.started_at)} · ${label(data.live.analysis_mode)} analysis`
+                  ? `Live since ${dateTime(data.live.started_at)}${data.live.game ? ` · ${data.live.game}` : ""}`
                   : s ? `Last stream ended ${ago(s.ended_at)}` : "CLIPX starts working automatically when Lacy goes live."}
               </p>
             </>
           )}
         </Card>
         <Stat label="Processing" value={<span className="text-xl">{processing || "—"}</span>} icon={Timer} loading={loading}
-          sub={data && data.counts.dead_jobs_7d > 0 ? `${data.counts.dead_jobs_7d} failed jobs this week` : "No failed jobs this week"} />
+          sub={proc.current ? `"${proc.current.title}" in this tab` : "Clips are edited in an open dashboard tab"} />
         <Stat label="Awaiting confirmation" value={data?.counts.awaiting_confirmation ?? 0} icon={Send} loading={loading}
           sub={<Link className="hover:text-fg-2" href="/publishing">Review in Publishing →</Link>} />
         <Stat label="Clips generated" value={data?.counts.clips ?? 0} icon={Film} loading={loading}
           sub={`${data?.counts.rendered ?? 0} rendered and ready`} />
         <Stat label="Clips published" value={data?.counts.published ?? 0} icon={Send} loading={loading}
           sub="Posted or delivered to the TikTok inbox" />
-        <Stat label="This stream" value={s?.stats?.clips ?? 0} icon={Activity} loading={loading}
-          sub={s ? `${s.stats?.rejected ?? 0} moments rejected · ${s.stats?.duplicates ?? 0} duplicates skipped` : "No stream yet"} />
-        <Stat label="Signals" value={<span className="text-xl">{s?.signals?.length ? s.signals.join(" · ") : "None"}</span>}
-          icon={Radio} loading={loading} sub="What the AI can actually see" />
+        <Stat label="This stream" value={s?.stats?.selected ?? 0} icon={Activity} loading={loading}
+          sub={s ? `selected from ${s.stats?.viewer_clips ?? 0} viewer clips · ${s.stats?.duplicates ?? 0} duplicates skipped` : "No stream yet"} />
+        <Stat label="How moments are found" value={<span className="text-xl">Viewer clips</span>}
+          icon={Radio} loading={loading} sub="Ranked by Twitch views — no real-time A/V analysis" />
       </div>
 
       {data && data.capabilities.notes.length > 0 && (
@@ -89,7 +88,7 @@ export default function OverviewPage() {
             {loading ? <Skeleton className="h-52 w-full" /> : data && (data.counts.clips > 0 || data.counts.published > 0) ? (
               <GroupedBars title="Clips generated and published per day" data={last14(data)} series={["Generated", "Published"]} />
             ) : (
-              <Empty icon={Film} title="No clips yet">Clips appear here as soon as CLIPX detects moments on a live stream.</Empty>
+              <Empty icon={Film} title="No clips yet">Clips appear here once viewers clip moments on Lacy's stream and they are edited.</Empty>
             )}
           </div>
         </Card>

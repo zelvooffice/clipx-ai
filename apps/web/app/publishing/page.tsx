@@ -11,10 +11,10 @@ import type { PublishingJob, PublishingSettings, TikTokAccount } from "@/lib/typ
 
 type Overview = {
   account: TikTokAccount | null; settings: PublishingSettings;
-  capacity: { posts_24h: number; max_per_day: number; remaining_today: number; next_allowed_at: string | null } | null;
+  capacity: { posts_24h: number; max_per_day: number; remaining_today: number; next_allowed_at: number | null } | null;
   compliance: { inbox_automation_consent: string; unaudited_restriction: string | null };
 };
-type History = { jobs: PublishingJob[]; events: { id: string; job_id: string; event: string; status: string; detail: Record<string, unknown>; at: string }[] };
+type History = { jobs: PublishingJob[]; events: { id: string; job_id: string; event: string; status: string; detail: Record<string, unknown>; at: number }[] };
 
 const STATUS: Record<string, Tone> = {
   awaiting_confirmation: "warn", scheduled: "info", uploading: "info", processing: "info", sent_to_inbox: "good",
@@ -77,7 +77,7 @@ export default function PublishingPage() {
             <div>
               <p className="text-xs font-medium uppercase tracking-wider text-muted">Auto-publish</p>
               <p className="mt-2 max-w-xl text-sm text-fg-2">
-                Rendered, verified clips are captioned, scheduled and sent to TikTok automatically.
+                Rendered clips are captioned, scheduled and sent to TikTok automatically.
                 {s?.auto_mode === "direct_post"
                   ? " TikTok requires your confirmation for each Direct Post — prepared posts wait in the queue for one click."
                   : " Drafts land in your TikTok inbox; you finish each post in the TikTok app."}
@@ -104,6 +104,12 @@ export default function PublishingPage() {
           {s?.automation_consent_at && (
             <p className="mt-3 text-xs text-muted">Automation consent recorded by {s.automation_consent_by} · {dateTime(s.automation_consent_at)}</p>
           )}
+          {s && (
+            <div className="mt-4">
+              <Toggle label="TikTok app audited" checked={s.client_audited} onChange={(v) => saveSettings({ client_audited: v })}
+                description="Turn on only after TikTok approves your app's audit. Until then posts can only be private (Only me)." />
+            </div>
+          )}
           {ov.data?.compliance.unaudited_restriction && (
             <div className="mt-4"><Notice tone="warn" title="TikTok app audit pending">{ov.data.compliance.unaudited_restriction}</Notice></div>
           )}
@@ -117,13 +123,13 @@ export default function PublishingPage() {
             {queue.data.map((j) => (
               <li key={j.id} className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={mediaUrl(j.clip.thumbnail_url) ?? ""} alt="" className="h-20 w-12 shrink-0 rounded-md bg-card-2 object-cover" />
+                <img src={mediaUrl(j.thumbnail_url) ?? ""} alt="" className="h-20 w-12 shrink-0 rounded-md bg-card-2 object-cover" />
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge tone={STATUS[j.status] ?? "neutral"}>{label(j.status)}</Badge>
                     <Badge tone="neutral" icon={j.mode === "inbox_draft" ? Inbox : Send}>{j.mode === "inbox_draft" ? "Draft" : "Direct Post"}</Badge>
                   </div>
-                  <p className="mt-1.5 line-clamp-1 text-sm">{j.title || j.clip.title}</p>
+                  <p className="mt-1.5 line-clamp-1 text-sm">{j.title || j.clip_title}</p>
                   <p className="mt-0.5 flex items-center gap-1 text-xs text-muted">
                     <CalendarClock size={12} aria-hidden /> {j.scheduled_for ? dateTime(j.scheduled_for) : "As soon as allowed"}
                     {j.schedule_basis && <span className="truncate"> · {j.schedule_basis}</span>}
@@ -146,7 +152,7 @@ export default function PublishingPage() {
             {hist.data.jobs.map((j) => (
               <li key={j.id} className="flex items-center gap-4 px-5 py-3">
                 <Badge tone={STATUS[j.status] ?? "neutral"}>{label(j.status)}</Badge>
-                <span className="min-w-0 flex-1 truncate text-sm text-fg-2">{j.title || j.clip.title}</span>
+                <span className="min-w-0 flex-1 truncate text-sm text-fg-2">{j.title || j.clip_title}</span>
                 {j.fail_reason && <span className="max-w-xs truncate text-xs text-[#f08a8a]" title={j.fail_reason}>{j.fail_reason}</span>}
                 <span className="text-xs text-muted">{ago(j.published_at ?? j.created_at)}</span>
               </li>
@@ -246,7 +252,7 @@ function ConfirmCard({ job, onClose, onDone }: { job: PublishingJob; onClose: ()
         {loading && <div className="p-6"><Skeleton className="h-80 w-full" /></div>}
         {data && !done && (
           <div className="grid flex-1 gap-6 overflow-auto p-6 md:grid-cols-[220px_1fr]">
-            <video src={mediaUrl(job.clip.video_url)} controls playsInline className="aspect-[9/16] w-full rounded-xl bg-black" aria-label="Preview of the video to post" />
+            <video src={mediaUrl(job.video_url)} controls playsInline className="aspect-[9/16] w-full rounded-xl bg-black" aria-label="Preview of the video to post" />
             <div className="space-y-5">
               <div className="flex items-center gap-3 rounded-xl border border-line bg-card-2 p-3">
                 {/* eslint-disable-next-line @next/next/no-img-element */}

@@ -44,16 +44,18 @@ function csrf(): string {
   return m ? decodeURIComponent(m[1]) : "";
 }
 
-export async function api<T = unknown>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
-  const method = init.method ?? (init.body !== undefined ? "POST" : "GET");
-  const res = await fetch(`/api/backend${path}`, {
+export async function api<T = unknown>(path: string, init: { method?: string; body?: unknown; raw?: Blob | Uint8Array; contentType?: string } = {}): Promise<T> {
+  const hasBody = init.body !== undefined || init.raw !== undefined;
+  const method = init.method ?? (hasBody ? "POST" : "GET");
+  const res = await fetch(`/api${path}`, {
     method,
     headers: {
       ...(init.body !== undefined ? { "content-type": "application/json" } : {}),
+      ...(init.raw !== undefined ? { "content-type": init.contentType ?? "application/octet-stream" } : {}),
       ...(method !== "GET" ? { "x-clipx-csrf": csrf() } : {}),
       ...(unlockToken() ? { "x-clipx-unlock": unlockToken() } : {}),
     },
-    body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
+    body: init.raw !== undefined ? (init.raw as BodyInit) : init.body !== undefined ? JSON.stringify(init.body) : undefined,
     credentials: "same-origin",
   });
   const text = await res.text();
@@ -112,8 +114,8 @@ export function useApi<T>(path: string | null, opts: { refreshMs?: number } = {}
   return { data, error, loading, reload: load };
 }
 
-/** Local-dev media is served by the API (signed proxy); production media URLs are short-lived R2 links. */
+/** Media is streamed from R2 by the Worker (`/api/v1/media/...`). */
 export function mediaUrl(url: string | null | undefined): string | undefined {
   if (!url) return undefined;
-  return url.startsWith("/v1/") ? `/api/backend${url}` : url;
+  return url.startsWith("/v1/") ? `/api${url}` : url;
 }

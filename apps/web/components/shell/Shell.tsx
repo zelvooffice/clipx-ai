@@ -9,6 +9,7 @@ import { usePathname } from "next/navigation";
 import { type ReactNode, useEffect, useState } from "react";
 import { cx } from "@/components/ui";
 import { api, LOCK_EVENT, setUnlockToken, unlockToken, useApi } from "@/lib/api";
+import { ProcessorProvider, useProcessor } from "@/components/Processor";
 import { LockScreen } from "./LockScreen";
 
 const NAV = [
@@ -22,7 +23,7 @@ const NAV = [
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
-type LiveStatus = { live: { title: string | null; analysis_mode: string } | null; monitor: { alive: boolean } };
+type LiveStatus = { live: { title: string | null } | null; target: string; cron: { alive: boolean; last_run: number | null } };
 
 function Logo() {
   return (
@@ -81,8 +82,35 @@ function LivePill() {
   return (
     <span className="inline-flex h-7 items-center gap-2 rounded-full border border-line-strong bg-card px-3 text-xs text-muted">
       <span className="size-2 rounded-full bg-[#55555c]" aria-hidden /> Offline
-      {!data.monitor.alive && <span className="hidden text-[#fbc94a] md:inline">· monitor not running</span>}
+      {!data.cron.alive && <span className="hidden text-[#fbc94a] md:inline">· scheduler not running yet</span>}
     </span>
+  );
+}
+
+const STAGE: Record<string, string> = { "loading engine": "Loading editor", downloading: "Downloading", "analysing audio": "Reading audio",
+  transcribing: "Subtitles", rendering: "Rendering", uploading: "Uploading", done: "Done" };
+
+/** Shows what this tab is editing; the free plan renders video in the browser. */
+function ProcessorPill() {
+  const p = useProcessor();
+  if (p.current) {
+    const r = p.current.progress.ratio;
+    return (
+      <Link href="/clips" className="inline-flex h-7 max-w-[18rem] items-center gap-2 rounded-full border border-[#8b5cf6]/40 bg-[#8b5cf6]/10 px-3 text-xs text-fg-2"
+        title={`Editing "${p.current.title}" in this tab — keep it open`} role="status">
+        <span className="size-2 animate-pulse rounded-full bg-[#a78bfa]" aria-hidden />
+        <span className="truncate">{STAGE[p.current.progress.stage]}{r !== undefined && p.current.progress.stage === "rendering" ? ` ${Math.round(r * 100)}%` : ""}</span>
+        <span className="hidden truncate text-muted md:inline">· {p.current.title}</span>
+      </Link>
+    );
+  }
+  if (!p.enabled) return null;
+  return (
+    <button onClick={() => p.setPaused(!p.paused)} className="hidden h-7 items-center gap-2 rounded-full border border-line-strong bg-card px-3 text-xs text-muted hover:text-fg-2 sm:inline-flex"
+      title={p.paused ? "Automatic editing is paused in this tab" : "This tab edits new clips automatically while it is open"}>
+      <span className={cx("size-2 rounded-full", p.paused ? "bg-[#55555c]" : "bg-[#34d399]")} aria-hidden />
+      {p.paused ? "Editing paused" : p.lastError ? "Editor: last clip failed" : "Editor ready"}
+    </button>
   );
 }
 
@@ -91,11 +119,11 @@ type Gate = "checking" | "locked" | "open";
 export function Shell({ children }: { children: ReactNode }) {
   const [gate, setGate] = useState<Gate>("checking");
   const [email, setEmail] = useState<string | null>(null);
+  const [setup, setSetup] = useState<number | null>(null);
 
   useEffect(() => {
-    fetch("/api/session").then((r) => (r.ok ? r.json() : null)).then((d) => setEmail(d?.email ?? null)).catch(() => null);
-    api<{ unlocked: boolean }>("/v1/session")
-      .then((s) => setGate(s.unlocked ? "open" : "locked"))
+    api<{ unlocked: boolean; email: string; setup_required: boolean; min_length: number }>("/v1/session")
+      .then((s) => { setEmail(s.email); setSetup(s.setup_required ? s.min_length : null); setGate(s.unlocked ? "open" : "locked"); })
       .catch(() => setGate(unlockToken() ? "open" : "locked"));
     const onLocked = () => setGate("locked");
     window.addEventListener(LOCK_EVENT, onLocked);
@@ -112,8 +140,9 @@ export function Shell({ children }: { children: ReactNode }) {
   }
 
   if (gate === "checking") return <div className="min-h-screen bg-ink" aria-busy="true" />;
-  if (gate === "locked") return <LockScreen email={email} onUnlocked={() => setGate("open")} />;
-  return <App email={email} onLock={lock}>{children}</App>;
+  if (gate === "locked") return <LockScreen email={email} setup={setup !== null} minLength={setup ?? 12}
+    onUnlocked={() => { setSetup(null); setGate("open"); }} />;
+  return <ProcessorProvider><App email={email} onLock={lock}>{children}</App></ProcessorProvider>;
 }
 
 function App({ children, email, onLock }: { children: ReactNode; email: string | null; onLock: () => void }) {
@@ -161,6 +190,7 @@ function App({ children, email, onLock }: { children: ReactNode; email: string |
               <Menu size={18} />
             </button>
             <LivePill />
+            <ProcessorPill />
           </div>
           <div className="flex items-center gap-3 text-xs text-muted">
             {email && (

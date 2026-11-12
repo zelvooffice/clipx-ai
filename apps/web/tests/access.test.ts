@@ -16,7 +16,7 @@ describe("access gate", () => {
   });
 
   it("allows the explicit dev bypass only outside production", async () => {
-    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("CLIPX_ENV", "development");
     vi.stubEnv("CF_ACCESS_TEAM_DOMAIN", "");
     vi.stubEnv("DEV_AUTH_EMAIL", "Dev@Example.com");
     const { authenticate } = await import("../lib/access");

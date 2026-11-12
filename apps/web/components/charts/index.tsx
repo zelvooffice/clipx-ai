@@ -274,10 +274,12 @@ const STATUS_STYLE: Record<string, { color: string; shape: "dot" | "ring" | "x";
   provisional: { color: "var(--color-warn)", shape: "ring", label: "Needs verification" },
   rejected: { color: "#8d8d97", shape: "x", label: "Rejected" },
   duplicate: { color: "#8d8d97", shape: "x", label: "Duplicate" },
+  selected: { color: "var(--color-good)", shape: "dot", label: "Selected" },
+  discovered: { color: "#8d8d97", shape: "ring", label: "Not selected" },
 };
 
-export function HighlightTimeline({ points, threshold, onSelect, selected }: {
-  points: TimelinePoint[]; threshold?: number; onSelect?: (id: string) => void; selected?: string | null;
+export function HighlightTimeline({ points, threshold, onSelect, selected, title = "Detected moments by quality score over the stream", metric = "quality" }: {
+  points: TimelinePoint[]; threshold?: number; onSelect?: (id: string) => void; selected?: string | null; title?: string; metric?: string;
 }) {
   const [ref, width] = useWidth<HTMLDivElement>();
   const [hover, setHover] = useState<TimelinePoint | null>(null);
@@ -294,9 +296,9 @@ export function HighlightTimeline({ points, threshold, onSelect, selected }: {
 
   return (
     <ChartFrame
-      title="Detected moments by quality score over the stream"
+      title={title}
       legend={legend.map((l) => ({ label: l.label, color: l.color, shape: l.shape }))}
-      table={{ columns: ["Stream time", "Quality", "Status", "Category", "Title"],
+      table={{ columns: ["Stream time", metric, "Status", "Category", "Title"],
                rows: points.map((p) => [hm(p.t), Math.round(p.score * 100), p.status, p.category, p.label]) }}
     >
       <div ref={ref} className="relative">
@@ -338,7 +340,7 @@ export function HighlightTimeline({ points, threshold, onSelect, selected }: {
         {hover && (
           <Tooltip x={x(hover.t)} y={y(hover.score)} width={width}>
             <p className="font-medium text-fg">{hover.label}</p>
-            <p className="mt-0.5 text-fg-2">{hm(hover.t)} · quality {Math.round(hover.score * 100)}</p>
+            <p className="mt-0.5 text-fg-2">{hm(hover.t)} · {metric} {Math.round(hover.score * 100)}</p>
             <p className="text-muted">{STATUS_STYLE[hover.status]?.label ?? hover.status}</p>
           </Tooltip>
         )}

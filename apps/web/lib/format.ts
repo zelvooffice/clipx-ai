@@ -12,18 +12,29 @@ export function score(n: number | null | undefined): string {
   return n === null || n === undefined ? "—" : Math.round(n * 100).toString();
 }
 
-export function ago(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  const s = (Date.now() - new Date(iso).getTime()) / 1000;
+export type When = string | number | null | undefined;
+
+/** Accepts ISO strings or epoch seconds (the API stores Unix time). */
+export function toDate(v: When): Date | null {
+  if (v === null || v === undefined || v === "") return null;
+  return new Date(typeof v === "number" ? (v < 1e12 ? v * 1000 : v) : v);
+}
+
+export function ago(v: When): string {
+  const d = toDate(v);
+  if (!d) return "—";
+  const s = (Date.now() - d.getTime()) / 1000;
+  if (s < 0) return `in ${Math.ceil(-s / 60)}m`;
   if (s < 60) return "just now";
   if (s < 3600) return `${Math.floor(s / 60)}m ago`;
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
   return `${Math.floor(s / 86400)}d ago`;
 }
 
-export function dateTime(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+export function dateTime(v: When): string {
+  const d = toDate(v);
+  if (!d) return "—";
+  return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 export function clock(seconds: number | null | undefined): string {

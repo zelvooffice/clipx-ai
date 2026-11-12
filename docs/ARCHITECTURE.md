@@ -1,5 +1,16 @@
 # CLIPX AI — System Design
 
+> **Deployed architecture (free plan, 2026-11-12):** a single Cloudflare Worker (`apps/web/worker.ts`) serves
+> the dashboard, the JSON API (`/api/v1/*`, `lib/server/api.ts`), OAuth callbacks and a per-minute Cron Trigger
+> (`lib/server/cron.ts`). Storage: D1 (self-migrating schema, `lib/server/schema.ts`) and R2 (`clips/<id>/source.mp4`,
+> `render.mp4`, `thumb.jpg`). Subtitles: Workers AI Whisper (word timestamps). Rendering happens in the operator's
+> browser with ffmpeg.wasm (`lib/render/*`): an open dashboard tab claims a `media_ready` clip (exclusive, 15 min lease),
+> renders 1080×1920 H.264/AAC and uploads it, then the Worker writes the caption and (with consent) prepares the TikTok job.
+> Moments are the viewers' Twitch clips ranked by views with IoU>0.3 de-duplication, capped per stream and never padded.
+> The 10 ms CPU limit of the free plan drives the design: media is always streamed (FixedLengthStream R2⇄fetch),
+> PBKDF2 is 25k iterations, each cron step is bounded. The sections below describe the original full design,
+> whose processing server (`services/api`) remains available as an optional paid upgrade for real-time A/V analysis.
+
 Status: implemented (v0.1). This document is the source of truth for how the system is put together and
 why. Facts about external APIs were verified against the official Twitch, TikTok and Cloudflare
 documentation on 2026-11-11 (see "Verified platform constraints").
