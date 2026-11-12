@@ -1,4 +1,6 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+beforeEach(() => vi.stubEnv("AUTH_MODE", "access"));
 
 afterEach(() => {
   vi.unstubAllEnvs();

@@ -6,12 +6,15 @@ import { appUrl, type Env } from "./env";
 import { ensureSchema } from "./schema";
 import * as tiktok from "./tiktok";
 import * as twitch from "./twitch";
+import * as unlock from "./unlock";
 
 export async function handleOAuth(req: Request, env: Env, provider: "twitch" | "tiktok"): Promise<Response> {
   const auth = await authenticate(req.headers, { team: env.CF_ACCESS_TEAM_DOMAIN, aud: env.CF_ACCESS_AUD,
-    emails: env.AUTHORIZED_EMAILS, devEmail: env.DEV_AUTH_EMAIL, production: env.CLIPX_ENV !== "development" });
+    emails: env.AUTHORIZED_EMAILS, devEmail: env.DEV_AUTH_EMAIL, production: env.CLIPX_ENV !== "development", mode: env.AUTH_MODE ?? "password" });
   if (!auth.ok) return Response.json({ detail: auth.reason }, { status: auth.status });
   await ensureSchema(env.DB);
+  // only an unlocked browser (session cookie from the dashboard password) may complete a connection
+  if (!(await unlock.verify(env, unlock.cookieToken(req), auth.email))) return Response.json({ detail: "locked" }, { status: 401 });
   const url = new URL(req.url);
   const p = url.searchParams;
   const dest = new URL("/settings", url.origin);

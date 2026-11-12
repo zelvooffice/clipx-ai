@@ -24,20 +24,21 @@ export class HttpError extends Error {
 
 interface Ctx { env: Env; req: Request; url: URL; email: string; ip: string | null; params: string[] }
 
-const json = (data: unknown, status = 200) =>
-  new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+const json = (data: unknown, status = 200, extra: Record<string, string> = {}) =>
+  new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json", "cache-control": "no-store", ...extra } });
+const unlocked = (token: string, expires_at: number) => json({ token, expires_at }, 200, { "set-cookie": unlock.setCookie(token) });
 
 const bool = (v: unknown) => Boolean(v);
 const MAX_UPLOAD = 95 * 1024 * 1024;
 // Reachable without the per-visit password: the unlock flow itself, and media (unguessable keys only ever returned
 // by unlocked endpoints; <video> elements cannot send headers).
-const UNLOCK_EXEMPT = [/^session(\/|$)/, /^media\//];
+const UNLOCK_EXEMPT = [/^session(\/|$)/];
 
 export async function handleApi(req: Request, env: Env, path: string): Promise<Response> {
   try {
     await ensureSchema(env.DB);
     const auth = await authenticate(req.headers, { team: env.CF_ACCESS_TEAM_DOMAIN, aud: env.CF_ACCESS_AUD,
-      emails: env.AUTHORIZED_EMAILS, devEmail: env.DEV_AUTH_EMAIL, production: env.CLIPX_ENV !== "development" });
+      emails: env.AUTHORIZED_EMAILS, devEmail: env.DEV_AUTH_EMAIL, production: env.CLIPX_ENV !== "development", mode: env.AUTH_MODE ?? "password" });
     if (!auth.ok) return json({ detail: auth.reason }, auth.status);
     const url = new URL(req.url);
     const ctx: Ctx = { env, req, url, email: auth.email, ip: req.headers.get("cf-connecting-ip"), params: [] };
@@ -48,7 +49,10 @@ export async function handleApi(req: Request, env: Env, path: string): Promise<R
       if (!cookie || req.headers.get("x-clipx-csrf") !== decodeURIComponent(cookie)) return json({ detail: "missing or invalid CSRF token" }, 403);
     }
     if (configProblems(env).length && !path.startsWith("session")) return json({ detail: `Server not configured: ${configProblems(env).join("; ")}` }, 503);
-    if (!UNLOCK_EXEMPT.some((r) => r.test(path)) && !(await unlock.verify(env, req.headers.get("x-clipx-unlock"), auth.email))) {
+    if (path.startsWith("media/")) {
+      // <video>/<img> cannot send headers: media needs the HttpOnly session cookie set at unlock
+      if (!(await unlock.verify(env, unlock.cookieToken(req), auth.email))) return json({ detail: "locked" }, 401);
+    } else if (!UNLOCK_EXEMPT.some((r) => r.test(path)) && !(await unlock.verify(env, req.headers.get("x-clipx-unlock"), auth.email))) {
       return json({ detail: "locked" }, 401);
     }
     for (const [method, pattern, fn] of ROUTES) {
@@ -99,17 +103,23 @@ const route = (method: string, pattern: string, fn: Handler) =>
   ROUTES.push([method, new RegExp(`^${pattern.replace(/:id/g, "([A-Za-z0-9_-]{1,80})")}$`), fn]);
 
 // ---- session (per-visit password)
+/** Who wrong-password limits apply to: the Access email, or (password-only mode) the client IP. */
+const limitKey = (c: Ctx) => ((c.env.AUTH_MODE ?? "password") === "password" ? `ip:${c.ip ?? "unknown"}` : c.email);
 route("GET", "session", async (c) => json({ email: c.email, password_required: true,
-  setup_required: !(await unlock.passwordHash(c.env)), min_length: unlock.MIN_PASSWORD,
+  setup_required: !(await unlock.passwordHash(c.env)), setup_needs_code: unlock.setupNeedsCode(c.env), min_length: unlock.MIN_PASSWORD,
   unlocked: await unlock.verify(c.env, c.req.headers.get("x-clipx-unlock"), c.email),
-  attempts_left: await unlock.attemptsLeft(c.env, c.email), config_problems: configProblems(c.env) }));
+  attempts_left: await unlock.attemptsLeft(c.env, limitKey(c)), config_problems: configProblems(c.env) }));
 
 route("POST", "session/setup", async (c) => {
-  const { password } = await body<{ password?: string }>(c);
-  if (typeof password !== "string" || password.length > 256) throw new HttpError(422, "password required");
-  const r = await unlock.setup(c.env, c.email, password);
-  if (r.ok) await audit(c.env.DB, c.email, "session.password_created", null, {}, c.ip);
-  return r.ok ? json({ token: r.token, expires_at: r.expires_at }) : json({ detail: r.detail }, r.status);
+  const { password, code } = await body<{ password?: string; code?: string }>(c);
+  if (typeof password !== "string" || password.length > 256 || (code !== undefined && (typeof code !== "string" || code.length > 200))) throw new HttpError(422, "password required");
+  // the setup code is guessable only as fast as the unlock limits allow
+  const g = await unlock.attemptsLeft(c.env, `setup:${limitKey(c)}`);
+  if (g <= 0) return json({ detail: "Too many attempts. Try again in 15 minutes." }, 429);
+  const r = await unlock.setup(c.env, c.email, password, code);
+  if (!r.ok && r.status === 403) await unlock.recordFailure(c.env, `setup:${limitKey(c)}`);
+  await audit(c.env.DB, c.email, r.ok ? "session.password_created" : "session.setup_failed", null, {}, c.ip);
+  return r.ok ? unlocked(r.token, r.expires_at) : json({ detail: r.detail }, r.status);
 });
 
 route("POST", "settings/password", async (c) => {
@@ -117,21 +127,22 @@ route("POST", "settings/password", async (c) => {
   if (typeof current !== "string" || typeof password !== "string" || password.length > 256) throw new HttpError(422, "current and new password required");
   const r = await unlock.change(c.env, c.email, current, password);
   await audit(c.env.DB, c.email, r.ok ? "session.password_changed" : "session.password_change_failed", null, {}, c.ip);
-  return r.ok ? json({ token: r.token, expires_at: r.expires_at }) : json({ detail: r.detail }, r.status);
+  return r.ok ? unlocked(r.token, r.expires_at) : json({ detail: r.detail }, r.status);
 });
 
 route("POST", "session/unlock", async (c) => {
   const { password } = await body<{ password?: string }>(c);
   if (!password || password.length > 256) throw new HttpError(422, "password required");
-  const r = await unlock.tryUnlock(c.env, c.email, password);
+  const r = await unlock.tryUnlock(c.env, c.email, password, limitKey(c));
   await audit(c.env.DB, c.email, r.ok ? "session.unlocked" : "session.unlock_failed", null, {}, c.ip);
-  return r.ok ? json({ token: r.token, expires_at: r.expires_at }) : json({ detail: r.detail }, r.status);
+  return r.ok ? unlocked(r.token, r.expires_at) : json({ detail: r.detail }, r.status);
 });
 
 route("POST", "session/lock", async (c) => {
   await unlock.revoke(c.env, c.req.headers.get("x-clipx-unlock"));
+  await unlock.revoke(c.env, unlock.cookieToken(c.req));
   await audit(c.env.DB, c.email, "session.locked", null, {}, c.ip);
-  return json({ status: "locked" });
+  return json({ status: "locked" }, 200, { "set-cookie": unlock.clearCookie() });
 });
 
 // ---- media (streamed from R2, Range supported)
@@ -637,7 +648,7 @@ route("GET", "settings", async (c) => {
   return json({ processing: await getSection(env.DB, "processing"), publishing: await getSection(env.DB, "publishing"),
     system: { plan: "Cloudflare free (Workers + D1 + R2 + Workers AI + Cron)", twitch_app_configured: twitch.configured(env),
       twitch_target_login: targetLogin(env), tiktok_app_configured: tiktok.configured(env), workers_ai: Boolean(env.AI),
-      password_required: true, password_in_dashboard: unlock.managedInDashboard(env), access_configured: Boolean(env.CF_ACCESS_TEAM_DOMAIN && env.CF_ACCESS_AUD),
+      password_required: true, password_in_dashboard: unlock.managedInDashboard(env), auth_mode: env.AUTH_MODE ?? "password", access_configured: Boolean(env.CF_ACCESS_TEAM_DOMAIN && env.CF_ACCESS_AUD),
       authorized_emails: (env.AUTHORIZED_EMAILS ?? "").split(",").map((x) => x.trim()).filter(Boolean),
       twitch_redirect_uri: `${appUrl(env, c.url.origin)}/api/oauth/twitch/callback`,
       tiktok_redirect_uri: `${appUrl(env, c.url.origin)}/api/oauth/tiktok/callback/`, config_problems: configProblems(env) } });

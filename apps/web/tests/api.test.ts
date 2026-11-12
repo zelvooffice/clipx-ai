@@ -16,7 +16,10 @@ async function call(method: string, path: string, opts: { body?: unknown; raw?: 
     h.set("origin", ORIGIN);
     if (opts.csrf !== false) { h.set("cookie", "clipx_csrf=abc"); h.set("x-clipx-csrf", "abc"); }
   }
-  if (opts.unlock !== false && token) h.set("x-clipx-unlock", token);
+  if (opts.unlock !== false && token) {
+    h.set("x-clipx-unlock", token);
+    h.set("cookie", [h.get("cookie"), `clipx_s=${token}`].filter(Boolean).join("; "));
+  }
   let body: BodyInit | undefined;
   if (opts.body !== undefined) { body = JSON.stringify(opts.body); h.set("content-type", "application/json"); }
   if (opts.raw) { body = opts.raw as BodyInit; h.set("content-length", String(opts.raw.byteLength)); }
@@ -31,7 +34,7 @@ beforeEach(async () => {
   vi.stubEnv("DEV_AUTH_EMAIL", "op@example.com");
   vi.stubEnv("CF_ACCESS_TEAM_DOMAIN", "");
   resetSchemaFlag();
-  env = { DB: d1(), MEDIA: r2(), CLIPX_ENV: "development", DEV_AUTH_EMAIL: "op@example.com", SESSION_SECRET: "s".repeat(40), TOKEN_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64"),
+  env = { DB: d1(), MEDIA: r2(), AUTH_MODE: "access", CLIPX_ENV: "development", DEV_AUTH_EMAIL: "op@example.com", SESSION_SECRET: "s".repeat(40), TOKEN_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64"),
           DASHBOARD_PASSWORD_HASH: await hashPassword("correct horse", 1000) } as never;
   token = "";
 });
@@ -160,5 +163,36 @@ describe("analytics", () => {
     const r = await call("GET", "analytics/summary");
     expect(r.data).toMatchObject({ videos: 0, engagement_rate: null, retention: { available: false } });
     expect(r.data.posting_times.status).toBe("insufficient_data");
+  });
+});
+
+describe("password-only mode (no Cloudflare Access)", () => {
+  beforeEach(() => {
+    Object.assign(env, { AUTH_MODE: "password", CLIPX_ENV: "production", DASHBOARD_PASSWORD_HASH: undefined, SETUP_CODE: "s3tup-code-0123456789" });
+  });
+
+  it("needs the one-time setup code to create the password, then only the password", async () => {
+    expect((await call("GET", "session")).data).toMatchObject({ setup_required: true, setup_needs_code: true, email: "owner" });
+    expect((await call("GET", "overview")).status).toBe(401);
+    expect((await call("POST", "session/setup", { body: { password: "a-long-enough-password" } })).status).toBe(403);
+    expect((await call("POST", "session/setup", { body: { password: "a-long-enough-password", code: "wrong" } })).status).toBe(403);
+    const ok = await call("POST", "session/setup", { body: { password: "a-long-enough-password", code: "s3tup-code-0123456789" } });
+    expect(ok.status).toBe(200);
+    expect(ok.headers.get("set-cookie")).toMatch(/^clipx_s=.*HttpOnly; Secure; SameSite=Lax$/);
+    // the code is useless once the password exists
+    expect((await call("POST", "session/setup", { body: { password: "another-long-password", code: "s3tup-code-0123456789" } })).status).toBe(409);
+    token = ok.data.token;
+    expect((await call("GET", "overview")).status).toBe(200);
+  });
+
+  it("limits wrong passwords per address and blocks media without the session cookie", async () => {
+    await call("POST", "session/setup", { body: { password: "a-long-enough-password", code: "s3tup-code-0123456789" } });
+    const from = (ip: string) => ({ headers: { "cf-connecting-ip": ip } });
+    for (let i = 0; i < 5; i++) await call("POST", "session/unlock", { body: { password: "nope" }, ...from("1.1.1.1") });
+    expect((await call("POST", "session/unlock", { body: { password: "a-long-enough-password" }, ...from("1.1.1.1") })).status).toBe(429);
+    const ok = await call("POST", "session/unlock", { body: { password: "a-long-enough-password" }, ...from("2.2.2.2") });
+    expect(ok.status).toBe(200);
+    const media = await handleApi(new Request(`${ORIGIN}/api/v1/media/clips/x/render.mp4`), env, "media/clips/x/render.mp4");
+    expect(media.status).toBe(401);
   });
 });

@@ -8,7 +8,7 @@ import { env, isProduction } from "./env";
  * Fails closed: if Access is not configured the dashboard is unreachable (except an explicit local dev bypass).
  */
 export type AuthResult =
-  | { ok: true; email: string; via: "access" | "dev" }
+  | { ok: true; email: string; via: "access" | "dev" | "password" }
   | { ok: false; status: 401 | 403 | 503; reason: string };
 
 let jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
@@ -29,9 +29,12 @@ export interface AccessConfig {
   emails?: string;
   devEmail?: string;
   production?: boolean;
+  /** "password": no Cloudflare Access; the per-visit dashboard password (checked by the API) is the only gate. */
+  mode?: string;
 }
 
 export async function authenticate(headers: Headers, cfg: AccessConfig = {}): Promise<AuthResult> {
+  if ((cfg.mode ?? (env("AUTH_MODE") || "password")) === "password") return { ok: true, email: "owner", via: "password" };
   const team = (cfg.team ?? env("CF_ACCESS_TEAM_DOMAIN")).replace(/\/$/, "");
   const aud = cfg.aud ?? env("CF_ACCESS_AUD");
   const devEmail = cfg.devEmail ?? env("DEV_AUTH_EMAIL");

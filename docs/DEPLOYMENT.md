@@ -48,27 +48,19 @@ npx cf deploy --prebuilt --secrets-file <файл с генерирани SESSIO
 - Сайтът е на `https://clipx-ai.<поддомейн>.workers.dev`.
 - **Докато Access не е настроен, сайтът не пуска никого** (връща 503). Нищо не е изложено.
 
-## 4. Защита на входа: Cloudflare Access + парола при всяко влизане
+## 4. Вход: само парола (без Cloudflare Access)
 
-1. Настройване на Access (Claude го прави с token-а):
-
-   ```bash
-   CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ACCOUNT_ID=... \
-   WEB_DOMAIN=clipx-ai.<поддомейн>.workers.dev AUTHORIZED_EMAILS="ти@пример.com" \
-   infra/cloudflare/setup-access.sh
-   ```
-
-   Скриптът извежда `CF_ACCESS_TEAM_DOMAIN` и `CF_ACCESS_AUD`. Те и `AUTHORIZED_EMAILS` се записват като тайни на Worker-а.
-2. Проверка, че без вход нищо не се отваря:
-
-   ```bash
-   WEB_DOMAIN=clipx-ai.<поддомейн>.workers.dev infra/cloudflare/verify-access.sh
-   ```
-
-3. **Ти:** отвори сайта → въведи имейла си → въведи кода от пощата.
-4. **Първо влизане:** сайтът иска да създадеш **паролата на таблото** (поне 12 знака). Пази се само нейният хеш.
-   След това паролата се иска **при всяко ново влизане и във всеки нов таб, за всеки потребител**.
-   Смяна: Settings → Security → Change dashboard password (всички други отворени сесии се заключват).
+- Сайтът се отваря **само с паролата на таблото**. Няма вход през друг сайт или имейл.
+- **Първо влизане:** въвеждаш **еднократния код за настройка** (тайната `SETUP_CODE` на Worker-а) и избираш парола
+  (поне 12 знака). Пази се само хешът ѝ. Щом паролата съществува, кодът вече не върши нищо.
+- Паролата се иска **при всяко ново влизане и във всеки нов таб**.
+- 5 грешни опита от един адрес → 15 минути блокировка. Общо за сайта: 30 грешни опита за 15 минути.
+- Видеата се отварят само с бисквитката от входа. Тя е HttpOnly и изчезва, когато затвориш браузъра.
+- Смяна на паролата: Settings → Security → Change dashboard password (всички други сесии се заключват).
+- Забравена парола: изтрий реда `dashboard_password_hash` от D1 таблицата `settings`
+  (Cloudflare → D1 → clipx → Console: `DELETE FROM settings WHERE key = 'dashboard_password_hash'`),
+  задай нов `SETUP_CODE` в Worker → Settings → Variables and Secrets и създай нова парола.
+- По желание вход и с Cloudflare Access: `AUTH_MODE=access` плюс `infra/cloudflare/setup-access.sh`.
 
 ## 5. Twitch (~5 мин.)
 

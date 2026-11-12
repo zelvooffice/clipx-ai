@@ -7,8 +7,10 @@ import { api, ApiError, setUnlockToken } from "@/lib/api";
 
 /** Shown on every new visit (every new tab), for every user, until the dashboard password is entered.
  *  On the very first visit (no password exists yet) the authorized owner creates it here. */
-export function LockScreen({ email, onUnlocked, setup = false, minLength = 12 }: { email: string | null; onUnlocked: () => void; setup?: boolean; minLength?: number }) {
+export function LockScreen({ email, onUnlocked, setup = false, needsCode = false, minLength = 12 }: {
+  email: string | null; onUnlocked: () => void; setup?: boolean; needsCode?: boolean; minLength?: number }) {
   const [password, setPassword] = useState("");
+  const [code, setCode] = useState("");
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -20,7 +22,7 @@ export function LockScreen({ email, onUnlocked, setup = false, minLength = 12 }:
     if (setup && password !== confirm) return setError("The two passwords don't match.");
     setBusy(true);
     try {
-      const r = await api<{ token: string | null }>(setup ? "/v1/session/setup" : "/v1/session/unlock", { method: "POST", body: { password } });
+      const r = await api<{ token: string | null }>(setup ? "/v1/session/setup" : "/v1/session/unlock", { method: "POST", body: setup && needsCode ? { password, code: code.trim() } : { password } });
       setUnlockToken(r.token);
       setPassword("");
       onUnlocked();
@@ -47,9 +49,17 @@ export function LockScreen({ email, onUnlocked, setup = false, minLength = 12 }:
         <p className="mt-1 text-sm text-muted">
           {setup
             ? <>First visit: choose the password everyone will need on every visit (at least {minLength} characters). Only its hash is stored.</>
-            : <>Enter the dashboard password to continue{email ? <> as <span className="text-fg-2">{email}</span></> : null}.</>}
+            : <>Enter the dashboard password to continue{email && email !== "owner" ? <> as <span className="text-fg-2">{email}</span></> : null}.</>}
         </p>
-        <label className="mt-6 block">
+        {setup && needsCode && (
+          <label className="mt-6 block">
+            <span className="mb-1.5 block text-xs font-medium text-fg-2">Setup code</span>
+            <input type="text" autoComplete="off" spellCheck={false} required value={code} onChange={(e) => setCode(e.target.value)}
+              className="h-10 w-full rounded-lg border border-line-strong bg-[#0b0b0d] px-3 font-mono text-sm text-fg focus:border-[#7c3aed]/70 focus:outline-none" />
+            <span className="mt-1 block text-[11px] text-muted">The one-time code you received when the site was set up. It stops working once the password exists.</span>
+          </label>
+        )}
+        <label className={setup && needsCode ? "mt-4 block" : "mt-6 block"}>
           <span className="mb-1.5 block text-xs font-medium text-fg-2">Password</span>
           <input
             type="password"

@@ -120,10 +120,11 @@ export function Shell({ children }: { children: ReactNode }) {
   const [gate, setGate] = useState<Gate>("checking");
   const [email, setEmail] = useState<string | null>(null);
   const [setup, setSetup] = useState<number | null>(null);
+  const [needsCode, setNeedsCode] = useState(false);
 
   useEffect(() => {
-    api<{ unlocked: boolean; email: string; setup_required: boolean; min_length: number }>("/v1/session")
-      .then((s) => { setEmail(s.email); setSetup(s.setup_required ? s.min_length : null); setGate(s.unlocked ? "open" : "locked"); })
+    api<{ unlocked: boolean; email: string; setup_required: boolean; setup_needs_code: boolean; min_length: number }>("/v1/session")
+      .then((s) => { setEmail(s.email); setNeedsCode(s.setup_needs_code); setSetup(s.setup_required ? s.min_length : null); setGate(s.unlocked ? "open" : "locked"); })
       .catch(() => setGate(unlockToken() ? "open" : "locked"));
     const onLocked = () => setGate("locked");
     window.addEventListener(LOCK_EVENT, onLocked);
@@ -140,7 +141,7 @@ export function Shell({ children }: { children: ReactNode }) {
   }
 
   if (gate === "checking") return <div className="min-h-screen bg-ink" aria-busy="true" />;
-  if (gate === "locked") return <LockScreen email={email} setup={setup !== null} minLength={setup ?? 12}
+  if (gate === "locked") return <LockScreen email={email} setup={setup !== null} needsCode={needsCode} minLength={setup ?? 12}
     onUnlocked={() => { setSetup(null); setGate("open"); }} />;
   return <ProcessorProvider><App email={email} onLock={lock}>{children}</App></ProcessorProvider>;
 }
@@ -193,7 +194,7 @@ function App({ children, email, onLock }: { children: ReactNode; email: string |
             <ProcessorPill />
           </div>
           <div className="flex items-center gap-3 text-xs text-muted">
-            {email && (
+            {email && email !== "owner" && (
               <span className="flex items-center gap-2">
                 <span className="grid size-7 place-items-center rounded-full border border-line-strong bg-card text-[11px] font-semibold uppercase text-fg-2">
                   {email[0]}

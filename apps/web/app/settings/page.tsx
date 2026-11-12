@@ -15,7 +15,7 @@ type TwitchStatus = {
 };
 type TikTokStatus = { configured: boolean; account: TikTokAccount | null; scopes_requested: string[]; redirect_uri: string };
 type System = { plan: string; twitch_app_configured: boolean; twitch_target_login: string; tiktok_app_configured: boolean; workers_ai: boolean;
-  password_required: boolean; password_in_dashboard: boolean; access_configured: boolean; authorized_emails: string[]; twitch_redirect_uri: string; tiktok_redirect_uri: string;
+  password_required: boolean; password_in_dashboard: boolean; auth_mode: string; access_configured: boolean; authorized_emails: string[]; twitch_redirect_uri: string; tiktok_redirect_uri: string;
   config_problems: string[] };
 type AllSettings = { processing: ProcessingSettings; system: System };
 
@@ -187,22 +187,24 @@ function SecurityCard({ system }: { system: System | null }) {
   return (
     <Card>
       <CardHeader title={<span className="flex items-center gap-2"><Shield size={14} aria-hidden /> Security</span>}
-        hint="Access is managed in Cloudflare (Zero Trust → Access) and the AUTHORIZED_EMAILS variable" />
+        hint={system?.auth_mode === "password" ? "The dashboard password is the only way in. 5 wrong tries per address → 15 min lockout." : "Access is managed in Cloudflare (Zero Trust → Access) and the AUTHORIZED_EMAILS secret"} />
       <div className="space-y-4 p-5">
         <div className="grid gap-2 text-xs sm:grid-cols-2">
-          {([["Cloudflare Access", system?.access_configured], ["Password on every visit", system?.password_required]] as const).map(([k, v]) => (
+          {(system?.auth_mode === "password"
+            ? [["Login", "Password only"], ["Password on every visit", system?.password_required]] as const
+            : [["Cloudflare Access", system?.access_configured], ["Password on every visit", system?.password_required]] as const).map(([k, v]) => (
             <div key={k} className="flex items-center justify-between rounded-lg border border-line px-3 py-2">
-              <span className="text-fg-2">{k}</span>{v ? <Badge tone="good">On</Badge> : <Badge tone="critical">Off</Badge>}
+              <span className="text-fg-2">{k}</span>{typeof v === "string" ? <Badge tone="good">{v}</Badge> : v ? <Badge tone="good">On</Badge> : <Badge tone="critical">Off</Badge>}
             </div>
           ))}
         </div>
         {system?.password_in_dashboard && <PasswordForm />}
-        <div>
+        {system?.auth_mode !== "password" && <div>
           <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted">Authorized emails</p>
           <ul className="space-y-1.5 text-sm">
             {system?.authorized_emails.map((e) => <li key={e} className="flex items-center justify-between"><span>{e}</span><Badge tone="neutral" noIcon>Cloudflare config</Badge></li>)}
           </ul>
-        </div>
+        </div>}
         <div>
           <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted">Audit log</p>
           <ul className="max-h-56 space-y-1.5 overflow-auto text-xs">

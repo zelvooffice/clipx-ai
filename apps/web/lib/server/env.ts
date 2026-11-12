@@ -12,6 +12,8 @@ export interface Env {
   TWITCH_TARGET_LOGIN?: string;
   PUBLIC_APP_URL?: string;
   CLIPX_ENV?: string;
+  AUTH_MODE?: string; // "password" (default): the dashboard password alone; "access": Cloudflare Access + password
+  SETUP_CODE?: string; // one-time code required to create the first password when AUTH_MODE is "password"
   DEV_AUTH_EMAIL?: string; // local development only (ignored when CLIPX_ENV is production)
   // secrets
   SESSION_SECRET?: string;
